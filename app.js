@@ -128,90 +128,160 @@ class BlindMate {
      * Initialize speech recognition for voice commands
      */
     initSpeechRecognition() {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            this.recognition = new SpeechRecognition();
-            
-            this.recognition.continuous = false;
-            this.recognition.interimResults = false;
-            this.recognition.lang = this.currentLanguage;
-            
-            this.recognition.onstart = () => {
-                this.isListening = true;
-                this.updateStatus('🎤 Listening... Speak your command now', 'primary');
-                this.elements.voiceStatus.textContent = 'Listening';
-                this.elements.voiceStatus.className = 'badge bg-primary';
-                this.elements.voiceBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Listening';
-                this.speak('Speak your command now', true);
-            };
-            
-            this.recognition.onresult = (event) => {
-                const command = event.results[0][0].transcript.trim();
-                const confidence = event.results[0][0].confidence;
-                console.log('Voice command received:', command, 'Confidence:', confidence);
-                
-                // Show command in UI
-                this.showRecognizedCommand(command);
-                
-                // Process the command via Gemini
-                this.processVoiceCommand(command);
-            };
-            
-            this.recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                this.isListening = false;
-                this.elements.voiceStatus.textContent = 'Error';
-                this.elements.voiceStatus.className = 'badge bg-danger';
-                this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
-                
-                let errorMessage = 'Voice recognition error';
-                if (event.error === 'not-allowed') {
-                    errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
-                    this.showTextFallback();
-                } else if (event.error === 'no-speech') {
-                    errorMessage = 'No speech detected. Please try again.';
-                }
-                
-                this.updateStatus(errorMessage, 'danger');
-                this.speak('Voice command failed. Try again or use the buttons.', true);
-            };
-            
-            this.recognition.onend = () => {
-                this.isListening = false;
-                this.elements.voiceStatus.textContent = 'Ready';
-                this.elements.voiceStatus.className = 'badge bg-secondary';
-                this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
-                this.updateStatus('Voice command completed.', 'success');
-            };
-            
-            // Add click handler for voice button
-            this.elements.voiceBtn.addEventListener('click', () => {
-                if (this.isListening) {
-                    this.stopVoiceCommand();
-                } else {
-                    this.startVoiceCommand();
-                }
-            });
-            
-        } else {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             console.warn('Speech recognition not supported');
             this.elements.voiceBtn.disabled = true;
             this.updateStatus('Voice commands not supported. Use text input instead.', 'warning');
             this.showTextFallback();
+            return;
         }
+
+        // Initialize speech recognition
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        // Create recognition instance for voice commands
+        this.commandRecognition = new SpeechRecognition();
+        this.commandRecognition.continuous = false;
+        this.commandRecognition.interimResults = false;
+        this.commandRecognition.lang = this.currentLanguage;
+        
+        // Command recognition event handlers
+        this.commandRecognition.onstart = () => {
+            this.isListening = true;
+            this.updateStatus('🎤 Listening... Speak your command now', 'primary');
+            this.elements.voiceStatus.textContent = 'Listening';
+            this.elements.voiceStatus.className = 'badge bg-primary';
+            this.elements.voiceBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Listening';
+            this.speak('Speak your command now', true);
+        };
+        
+        this.commandRecognition.onresult = (event) => {
+            const command = event.results[0][0].transcript.trim();
+            const confidence = event.results[0][0].confidence;
+            console.log('Voice command received:', command, 'Confidence:', confidence);
+            
+            // Show command in UI
+            this.showRecognizedCommand(command);
+            
+            // Process the command via Gemini
+            this.processVoiceCommand(command);
+        };
+        
+        this.commandRecognition.onerror = (event) => {
+            console.error('Command recognition error:', event.error);
+            this.isListening = false;
+            this.elements.voiceStatus.textContent = 'Error';
+            this.elements.voiceStatus.className = 'badge bg-danger';
+            this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
+            
+            let errorMessage = 'Voice recognition error';
+            if (event.error === 'not-allowed') {
+                errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
+                this.showTextFallback();
+            } else if (event.error === 'no-speech') {
+                errorMessage = 'No speech detected. Please try again.';
+            }
+            
+            this.updateStatus(errorMessage, 'danger');
+            this.speak('Voice command failed. Try again or use the buttons.', true);
+        };
+        
+        this.commandRecognition.onend = () => {
+            this.isListening = false;
+            this.elements.voiceStatus.textContent = 'Ready';
+            this.elements.voiceStatus.className = 'badge bg-secondary';
+            this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
+            this.updateStatus('Voice command completed.', 'success');
+        };
+
+        // Add click handler for voice button
+        this.elements.voiceBtn.addEventListener('click', () => {
+            if (this.isListening) {
+                this.stopVoiceCommand();
+            } else {
+                this.startVoiceCommand();
+            }
+        });
+        
+        // Initialize continuous recognition for wake words separately
+        this.initContinuousListening();
+    }
+    
+    /**
+     * Initialize continuous listening for wake words
+     */
+    initContinuousListening() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.continuousRecognition = new SpeechRecognition();
+        this.continuousRecognition.continuous = true;
+        this.continuousRecognition.interimResults = true;
+        this.continuousRecognition.lang = this.currentLanguage;
+        
+        this.continuousRecognition.onresult = (event) => {
+            const command = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+            console.log('Continuous recognition heard:', command);
+            
+            // Check for wake words
+            if (this.wakeWords.some(wake => command.includes(wake))) {
+                console.log('Wake word detected!');
+                this.handleWakeWordDetected();
+            }
+        };
+        
+        this.continuousRecognition.onerror = (event) => {
+            console.log('Continuous recognition error:', event.error);
+            if (event.error !== 'aborted') {
+                // Restart continuous listening after a short delay
+                setTimeout(() => {
+                    if (this.isListeningForWakeWord) {
+                        this.startContinuousListening();
+                    }
+                }, 1000);
+            }
+        };
+        
+        this.continuousRecognition.onend = () => {
+            // Restart continuous listening if it should be active
+            if (this.isListeningForWakeWord && !this.isListening) {
+                setTimeout(() => {
+                    this.startContinuousListening();
+                }, 500);
+            }
+        };
     }
     
     /**
      * Start voice command
      */
     startVoiceCommand() {
-        if (this.recognition && !this.isListening) {
-            try {
-                this.recognition.start();
-            } catch (error) {
-                console.error('Error starting voice recognition:', error);
-                this.updateStatus('Could not start voice recognition. Try again.', 'danger');
-            }
+        if (!this.commandRecognition) {
+            this.updateStatus('Voice recognition not available.', 'danger');
+            this.showTextFallback();
+            return;
+        }
+
+        if (this.isListening) {
+            this.stopVoiceCommand();
+            return;
+        }
+
+        try {
+            // Stop continuous listening temporarily
+            this.stopContinuousListening();
+            
+            // Start command recognition
+            this.commandRecognition.lang = this.currentLanguage;
+            this.commandRecognition.start();
+        } catch (error) {
+            console.error('Error starting voice recognition:', error);
+            this.updateStatus('Could not start voice recognition. Try again.', 'danger');
+            
+            // Restart continuous listening
+            this.startContinuousListening();
         }
     }
     
@@ -219,9 +289,48 @@ class BlindMate {
      * Stop voice command
      */
     stopVoiceCommand() {
-        if (this.recognition && this.isListening) {
-            this.recognition.stop();
+        if (this.commandRecognition && this.isListening) {
+            this.commandRecognition.stop();
         }
+    }
+    
+    /**
+     * Start continuous listening for wake words
+     */
+    startContinuousListening() {
+        if (this.continuousRecognition && this.isListeningForWakeWord && !this.isListening) {
+            try {
+                this.continuousRecognition.lang = this.currentLanguage;
+                this.continuousRecognition.start();
+            } catch (error) {
+                console.log('Continuous listening start error:', error.message);
+            }
+        }
+    }
+    
+    /**
+     * Stop continuous listening
+     */
+    stopContinuousListening() {
+        if (this.continuousRecognition) {
+            try {
+                this.continuousRecognition.stop();
+            } catch (error) {
+                console.log('Continuous listening stop error:', error.message);
+            }
+        }
+    }
+    
+    /**
+     * Handle wake word detection
+     */
+    handleWakeWordDetected() {
+        this.speak('Yes, how can I help you?', true);
+        
+        // Stop continuous listening and start command listening
+        setTimeout(() => {
+            this.startVoiceCommand();
+        }, 1500);
     }
     
     /**
@@ -329,13 +438,10 @@ class BlindMate {
         const greeting = this.languages[this.currentLanguage].greeting;
         this.speak(greeting, true); // High priority
         
-        // Start continuous listening for wake word
-        this.startContinuousListening();
-        
-        // Wait for user response to greeting
+        // Start continuous listening for wake word after greeting
         setTimeout(() => {
-            this.setupVoicePermissionFlow();
-        }, 3000);
+            this.startContinuousListening();
+        }, 2000);
     }
     
     /**
