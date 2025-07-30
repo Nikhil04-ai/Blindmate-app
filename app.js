@@ -125,7 +125,7 @@ class BlindMate {
     }
 
     /**
-     * Initialize speech recognition
+     * Initialize speech recognition for voice commands
      */
     initSpeechRecognition() {
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -138,29 +138,163 @@ class BlindMate {
             
             this.recognition.onstart = () => {
                 this.isListening = true;
-                this.elements.voiceStatus.style.display = 'block';
-                this.elements.voiceBtn.disabled = true;
+                this.updateStatus('🎤 Listening... Speak your command now', 'primary');
+                this.elements.voiceStatus.textContent = 'Listening';
+                this.elements.voiceStatus.className = 'badge bg-primary';
+                this.elements.voiceBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Listening';
+                this.speak('Speak your command now', true);
             };
             
             this.recognition.onresult = (event) => {
-                const command = event.results[0][0].transcript.toLowerCase().trim();
-                console.log('Voice command received:', command);
+                const command = event.results[0][0].transcript.trim();
+                const confidence = event.results[0][0].confidence;
+                console.log('Voice command received:', command, 'Confidence:', confidence);
+                
+                // Show command in UI
+                this.showRecognizedCommand(command);
+                
+                // Process the command via Gemini
                 this.processVoiceCommand(command);
             };
             
             this.recognition.onerror = (event) => {
                 console.error('Speech recognition error:', event.error);
-                this.speak('Sorry, I could not understand your command. Please try again.');
-                this.stopListening();
+                this.isListening = false;
+                this.elements.voiceStatus.textContent = 'Error';
+                this.elements.voiceStatus.className = 'badge bg-danger';
+                this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
+                
+                let errorMessage = 'Voice recognition error';
+                if (event.error === 'not-allowed') {
+                    errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
+                    this.showTextFallback();
+                } else if (event.error === 'no-speech') {
+                    errorMessage = 'No speech detected. Please try again.';
+                }
+                
+                this.updateStatus(errorMessage, 'danger');
+                this.speak('Voice command failed. Try again or use the buttons.', true);
             };
             
             this.recognition.onend = () => {
-                this.stopListening();
+                this.isListening = false;
+                this.elements.voiceStatus.textContent = 'Ready';
+                this.elements.voiceStatus.className = 'badge bg-secondary';
+                this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
+                this.updateStatus('Voice command completed.', 'success');
             };
+            
+            // Add click handler for voice button
+            this.elements.voiceBtn.addEventListener('click', () => {
+                if (this.isListening) {
+                    this.stopVoiceCommand();
+                } else {
+                    this.startVoiceCommand();
+                }
+            });
+            
         } else {
             console.warn('Speech recognition not supported');
             this.elements.voiceBtn.disabled = true;
+            this.updateStatus('Voice commands not supported. Use text input instead.', 'warning');
+            this.showTextFallback();
         }
+    }
+    
+    /**
+     * Start voice command
+     */
+    startVoiceCommand() {
+        if (this.recognition && !this.isListening) {
+            try {
+                this.recognition.start();
+            } catch (error) {
+                console.error('Error starting voice recognition:', error);
+                this.updateStatus('Could not start voice recognition. Try again.', 'danger');
+            }
+        }
+    }
+    
+    /**
+     * Stop voice command
+     */
+    stopVoiceCommand() {
+        if (this.recognition && this.isListening) {
+            this.recognition.stop();
+        }
+    }
+    
+    /**
+     * Show text fallback input for when voice is not available
+     */
+    showTextFallback() {
+        if (document.getElementById('textCommandInput')) return; // Already shown
+        
+        const fallbackHtml = `
+            <div class="mt-3 p-3 border rounded bg-light">
+                <h6>Voice not available? Use text instead:</h6>
+                <div class="input-group">
+                    <input type="text" id="textCommandInput" class="form-control" 
+                           placeholder="Type your command (e.g., 'start detection', 'take me to library')">
+                    <button class="btn btn-primary" id="textCommandBtn">
+                        <i class="fas fa-paper-plane"></i> Send
+                    </button>
+                </div>
+                <small class="text-muted">Commands: start detection, stop, where am i, take me to [place], enable location</small>
+            </div>
+        `;
+        
+        const controlsSection = document.querySelector('.col-md-6:last-child .card-body');
+        if (controlsSection) {
+            controlsSection.insertAdjacentHTML('beforeend', fallbackHtml);
+            
+            const textInput = document.getElementById('textCommandInput');
+            const textBtn = document.getElementById('textCommandBtn');
+            
+            const processTextCommand = () => {
+                const command = textInput.value.trim();
+                if (command) {
+                    this.showRecognizedCommand(command);
+                    this.processVoiceCommand(command);
+                    textInput.value = '';
+                }
+            };
+            
+            textBtn.addEventListener('click', processTextCommand);
+            textInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    processTextCommand();
+                }
+            });
+        }
+    }
+    
+    /**
+     * Show the recognized command in UI
+     */
+    showRecognizedCommand(command) {
+        // Update the system status to show the command
+        this.updateStatus(`Command received: "${command}"`, 'info');
+        
+        // Show in dedicated command display
+        let commandDisplay = document.getElementById('lastCommand');
+        if (!commandDisplay) {
+            const statusArea = document.getElementById('systemStatus').parentElement;
+            statusArea.insertAdjacentHTML('afterend', `
+                <div class="alert alert-info mt-2" id="lastCommand" style="display: none;">
+                    <strong>Last Command:</strong> <span id="commandText"></span>
+                </div>
+            `);
+            commandDisplay = document.getElementById('lastCommand');
+        }
+        
+        document.getElementById('commandText').textContent = command;
+        commandDisplay.style.display = 'block';
+        
+        // Hide after 5 seconds
+        setTimeout(() => {
+            commandDisplay.style.display = 'none';
+        }, 5000);
     }
 
     /**
@@ -615,40 +749,16 @@ class BlindMate {
     }
 
     /**
-     * Start voice command listening
-     */
-    startVoiceCommand() {
-        if (!this.recognition) {
-            this.speak('Voice commands are not supported on this device.');
-            return;
-        }
-        
-        if (this.isListening) {
-            return;
-        }
-        
-        this.recognition.lang = this.currentLanguage;
-        this.recognition.start();
-    }
-
-    /**
-     * Stop voice command listening
-     */
-    stopListening() {
-        this.isListening = false;
-        this.elements.voiceStatus.style.display = 'none';
-        this.elements.voiceBtn.disabled = false;
-    }
-
-    /**
-     * Process voice commands
+     * Process voice commands via Gemini API
      */
     async processVoiceCommand(command) {
-        console.log('Processing command:', command);
+        console.log('Processing voice command:', command);
         
         try {
+            this.updateStatus('Processing your command...', 'primary');
+            
             // Send command to Gemini API for processing
-            const response = await fetch('/api/process-command', {
+            const response = await fetch('/gemini', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -659,18 +769,55 @@ class BlindMate {
                 })
             });
             
-            const result = await response.json();
-            
             if (!response.ok) {
-                throw new Error(result.error || 'Failed to process command');
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
-            // Execute the action
-            this.executeAction(result);
+            const result = await response.json();
+            console.log('Gemini response:', result);
+            
+            // Execute the action based on Gemini's response
+            await this.executeAction(result);
             
         } catch (error) {
             console.error('Error processing command:', error);
-            this.speak('Sorry, I could not process your command. Please try again.');
+            
+            // Fallback to basic command processing
+            this.speak('Let me try to process that command locally.', true);
+            this.fallbackCommandProcessing(command);
+        }
+    }
+    
+    /**
+     * Fallback command processing when Gemini is unavailable
+     */
+    fallbackCommandProcessing(command) {
+        const cmd = command.toLowerCase();
+        
+        if (cmd.includes('start') && cmd.includes('detection')) {
+            this.speak('Starting object detection', true);
+            this.startDetection();
+        } else if (cmd.includes('stop')) {
+            this.speak('Stopping detection', true);
+            this.stopDetection();
+        } else if (cmd.includes('location') || cmd.includes('where am i')) {
+            this.speak('Enabling location services', true);
+            this.requestLocation();
+        } else if (cmd.includes('take me') || cmd.includes('navigate')) {
+            // Extract destination
+            const destination = cmd.replace(/take me to|navigate to|go to/g, '').trim();
+            if (destination) {
+                this.speak(`Opening navigation to ${destination}`, true);
+                this.startNavigation(destination);
+            } else {
+                this.speak('Where would you like to go?', true);
+            }
+        } else if (cmd.includes('language') && cmd.includes('hindi')) {
+            this.changeLanguage('hi-IN');
+        } else if (cmd.includes('language') && cmd.includes('english')) {
+            this.changeLanguage('en-IN');
+        } else {
+            this.speak('I did not understand that command. Try saying start detection, stop, or take me to a location.', true);
         }
     }
 
@@ -678,29 +825,39 @@ class BlindMate {
      * Execute actions based on Gemini response
      */
     async executeAction(result) {
-        const { action, destination, response } = result;
+        const { action, destination, response, language } = result;
         
-        // Speak the response
+        // Speak the response from Gemini
         if (response) {
-            this.speak(response);
+            this.speak(response, true);
         }
         
+        // Execute the requested action
         switch (action) {
             case 'start_detection':
                 if (!this.isDetecting) {
                     await this.startDetection();
+                    this.updateStatus('Object detection started via voice command', 'success');
+                } else {
+                    this.speak('Detection is already running', true);
                 }
                 break;
                 
             case 'stop_detection':
+            case 'stop':
                 if (this.isDetecting) {
                     this.stopDetection();
+                    this.updateStatus('Object detection stopped via voice command', 'success');
+                } else {
+                    this.speak('Detection is not currently running', true);
                 }
                 break;
                 
             case 'navigate':
                 if (destination) {
                     await this.startNavigation(destination);
+                } else {
+                    this.speak('I need a destination to navigate to', true);
                 }
                 break;
                 
@@ -709,14 +866,26 @@ class BlindMate {
                 break;
                 
             case 'change_language':
-                const lang = result.language;
-                if (lang && this.languages[lang]) {
-                    this.changeLanguage(lang);
+                if (language && this.languages[language]) {
+                    this.changeLanguage(language);
+                } else {
+                    this.speak('Language not supported', true);
+                }
+                break;
+                
+            case 'get_location':
+                if (this.userLocation) {
+                    this.speak(`You are currently at latitude ${this.userLocation.latitude.toFixed(4)}, longitude ${this.userLocation.longitude.toFixed(4)}`, true);
+                } else {
+                    this.speak('Location not available. Please enable location services first.', true);
                 }
                 break;
                 
             default:
                 console.log('Unknown action:', action);
+                if (!response) {
+                    this.speak('I understood your command but could not perform the action.', true);
+                }
         }
     }
 
