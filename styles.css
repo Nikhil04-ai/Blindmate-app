@@ -195,17 +195,44 @@ header h1 {
     border: 0;
 }
 
-/* Object detection bounding box styles */
-.detection-box {
+/* Canvas overlay for object detection */
+#canvas {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    pointer-events: none !important;
+    z-index: 10 !important;
+}
+
+/* Video and canvas container */
+.card-body {
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+/* Object detection visual indicators */
+.detection-indicator {
     position: absolute;
-    border: 3px solid #00ff00;
-    background-color: rgba(0, 255, 0, 0.1);
-    color: #00ff00;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 255, 0, 0.8);
+    color: black;
+    padding: 5px 10px;
+    border-radius: 5px;
     font-weight: bold;
-    font-size: 14px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    pointer-events: none;
+    font-size: 12px;
+    z-index: 15;
+}
+
+.detection-indicator.active {
+    animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% { background: rgba(0, 255, 0, 0.8); }
+    50% { background: rgba(0, 255, 0, 1); }
 }
 
 /* Navigation directions display */

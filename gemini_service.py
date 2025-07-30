@@ -102,7 +102,7 @@ class GeminiService:
             # Create system prompt for command processing
             system_prompt = self._create_system_prompt(language)
             
-            # Process command with Gemini
+            # Process command with Gemini - ensure UTF-8 encoding
             user_prompt = f"User command: '{command}'"
             
             response = self.client.models.generate_content(
@@ -121,8 +121,8 @@ class GeminiService:
             if not response.text:
                 raise ValueError("Empty response from Gemini")
             
-            # Parse JSON response
-            result = json.loads(response.text)
+            # Parse JSON response with proper encoding
+            result = json.loads(response.text.encode('utf-8').decode('utf-8'))
             
             # Validate and enhance response
             return self._validate_and_enhance_response(result, language)

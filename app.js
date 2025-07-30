@@ -30,7 +30,8 @@ class BlindMate {
             systemStatus: document.getElementById('systemStatus'),
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
-            loadingOverlay: document.getElementById('loadingOverlay')
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            detectionIndicator: document.getElementById('detectionIndicator')
         };
         
         // Language configurations
@@ -48,7 +49,16 @@ class BlindMate {
         this.detectionThreshold = 0.5;
         this.lastDetections = [];
         this.lastAnnouncement = 0;
-        this.announcementInterval = 3000; // 3 seconds between announcements
+        this.announcementInterval = 5000; // 5 seconds between announcements
+        this.lastSpeechTime = 0;
+        this.speechCooldown = 2000; // 2 seconds cooldown between speech
+        this.isSpeaking = false;
+        this.speechQueue = [];
+        
+        // Wake word detection
+        this.isListeningForWakeWord = true;
+        this.wakeWords = ['hey blindmate', 'hey blind mate', 'blindmate'];
+        this.continuousRecognition = null;
         
         this.init();
     }
@@ -179,11 +189,162 @@ class BlindMate {
     }
 
     /**
-     * Start voice interaction flow
+     * Start voice interaction flow with permissions
      */
     startVoiceInteraction() {
         const greeting = this.languages[this.currentLanguage].greeting;
-        this.speak(greeting);
+        this.speak(greeting, true); // High priority
+        
+        // Start continuous listening for wake word
+        this.startContinuousListening();
+        
+        // Wait for user response to greeting
+        setTimeout(() => {
+            this.setupVoicePermissionFlow();
+        }, 3000);
+    }
+    
+    /**
+     * Setup voice-guided permission flow
+     */
+    setupVoicePermissionFlow() {
+        if (this.recognition && !this.isListening) {
+            this.recognition.continuous = false; // Short responses for permissions
+            this.recognition.interimResults = false;
+            
+            this.recognition.onresult = (event) => {
+                const command = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+                console.log('Permission flow - heard:', command);
+                
+                if (command.includes('yes') || command.includes('हाँ') || command.includes('ওয়াই') || command.includes('ஆம்')) {
+                    this.handlePermissionYes();
+                } else if (command.includes('no') || command.includes('नहीं') || command.includes('না') || command.includes('இল்லை')) {
+                    this.handlePermissionNo();
+                }
+            };
+            
+            this.recognition.onerror = (event) => {
+                console.log('Permission recognition error:', event.error);
+                this.isListening = false;
+            };
+            
+            this.recognition.onend = () => {
+                this.isListening = false;
+            };
+            
+            try {
+                this.recognition.start();
+                this.isListening = true;
+            } catch (error) {
+                console.log('Could not start permission recognition:', error);
+            }
+        }
+    }
+    
+    /**
+     * Handle "yes" response during permission flow
+     */
+    async handlePermissionYes() {
+        if (!this.stream) {
+            // First "yes" - start detection
+            this.speak('Starting camera detection now.', true);
+            await this.startDetection();
+            
+            // Ask for location
+            setTimeout(() => {
+                this.speak('Would you like to enable location for navigation?', true);
+            }, 2000);
+        } else if (!this.userLocation) {
+            // Second "yes" - enable location
+            this.speak('Enabling location services.', true);
+            await this.requestLocation();
+            this.finalizeSetup();
+        }
+    }
+    
+    /**
+     * Handle "no" response during permission flow
+     */
+    handlePermissionNo() {
+        this.speak('Okay, you can enable features later using voice commands or buttons.', true);
+        this.finalizeSetup();
+    }
+    
+    /**
+     * Finalize setup and start continuous listening
+     */
+    finalizeSetup() {
+        setTimeout(() => {
+            this.speak('Setup complete. Say "Hey BlindMate" followed by your command to interact with me.', true);
+            this.startContinuousListening();
+        }, 2000);
+    }
+    
+    /**
+     * Start continuous listening for wake word
+     */
+    startContinuousListening() {
+        if (!this.recognition || this.continuousRecognition) return;
+        
+        try {
+            this.continuousRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            this.continuousRecognition.continuous = true;
+            this.continuousRecognition.interimResults = false;
+            this.continuousRecognition.lang = this.currentLanguage;
+            
+            this.continuousRecognition.onresult = (event) => {
+                const command = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+                console.log('Continuous listening heard:', command);
+                
+                // Check for wake word
+                const hasWakeWord = this.wakeWords.some(wake => command.includes(wake));
+                
+                if (hasWakeWord) {
+                    // Extract command after wake word
+                    const commandAfterWake = command.split(/hey\s*blind\s*mate\s*/i)[1]?.trim();
+                    if (commandAfterWake) {
+                        this.speak('Yes, how can I help?', true);
+                        this.processVoiceCommand(commandAfterWake);
+                    } else {
+                        this.speak('Yes, I am listening. What can I do for you?', true);
+                    }
+                }
+            };
+            
+            this.continuousRecognition.onerror = (event) => {
+                console.log('Continuous recognition error:', event.error);
+                // Only restart if it's not already running
+                if (event.error !== 'aborted') {
+                    setTimeout(() => {
+                        if (this.continuousRecognition && !this.isListening) {
+                            try {
+                                this.continuousRecognition.start();
+                            } catch (e) {
+                                console.log('Could not restart continuous recognition:', e);
+                            }
+                        }
+                    }, 2000);
+                }
+            };
+            
+            this.continuousRecognition.onend = () => {
+                // Only restart if we should be listening
+                if (this.continuousRecognition && !this.isListening) {
+                    setTimeout(() => {
+                        try {
+                            this.continuousRecognition.start();
+                        } catch (e) {
+                            console.log('Could not restart continuous recognition:', e);
+                        }
+                    }, 1000);
+                }
+            };
+            
+            this.continuousRecognition.start();
+            
+        } catch (error) {
+            console.log('Could not start continuous listening:', error);
+        }
     }
 
     /**
@@ -226,6 +387,10 @@ class BlindMate {
             this.elements.detectionStatus.textContent = 'Active';
             this.elements.detectionStatus.className = 'badge bg-success';
             
+            // Show detection indicator
+            this.elements.detectionIndicator.style.display = 'block';
+            this.elements.detectionIndicator.classList.add('active');
+            
             this.elements.startBtn.disabled = true;
             this.elements.stopBtn.disabled = false;
             
@@ -258,6 +423,10 @@ class BlindMate {
         this.updateStatus('Detection stopped.', 'secondary');
         this.elements.detectionStatus.textContent = 'Inactive';
         this.elements.detectionStatus.className = 'badge bg-secondary';
+        
+        // Hide detection indicator
+        this.elements.detectionIndicator.style.display = 'none';
+        this.elements.detectionIndicator.classList.remove('active');
         
         this.elements.startBtn.disabled = false;
         this.elements.stopBtn.disabled = true;
@@ -301,34 +470,57 @@ class BlindMate {
     }
 
     /**
-     * Draw bounding boxes and labels on canvas
+     * Draw bounding boxes and labels on canvas with improved styling
      */
     drawPredictions(predictions) {
-        predictions.forEach(prediction => {
+        // Clear previous drawings
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        predictions.forEach((prediction, index) => {
             const [x, y, width, height] = prediction.bbox;
+            const confidence = Math.round(prediction.score * 100);
+            const label = `${prediction.class} ${confidence}%`;
             
-            // Draw bounding box
-            this.ctx.strokeStyle = '#00ff00';
+            // Color coding for different object types
+            let boxColor = '#00ff00'; // Default green
+            if (prediction.class === 'person') boxColor = '#ff6b6b'; // Red for people
+            else if (prediction.class.includes('vehicle') || prediction.class === 'car' || prediction.class === 'truck') boxColor = '#ffa500'; // Orange for vehicles
+            else if (prediction.class === 'chair' || prediction.class === 'couch') boxColor = '#4ecdc4'; // Teal for furniture
+            
+            // Draw bounding box with shadow for better visibility
+            this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            this.ctx.shadowBlur = 3;
+            this.ctx.strokeStyle = boxColor;
             this.ctx.lineWidth = 3;
             this.ctx.strokeRect(x, y, width, height);
             
-            // Draw label background
-            this.ctx.fillStyle = '#00ff00';
-            this.ctx.fillRect(x, y - 25, width, 25);
+            // Reset shadow for text
+            this.ctx.shadowBlur = 0;
+            
+            // Measure text to create proper background
+            this.ctx.font = 'bold 16px Arial';
+            const textMetrics = this.ctx.measureText(label);
+            const textWidth = textMetrics.width + 10;
+            const textHeight = 25;
+            
+            // Draw label background with some padding
+            this.ctx.fillStyle = boxColor;
+            this.ctx.fillRect(x, y - textHeight, textWidth, textHeight);
             
             // Draw label text
             this.ctx.fillStyle = '#000000';
-            this.ctx.font = '16px Arial';
-            this.ctx.fillText(
-                `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
-                x + 5,
-                y - 5
-            );
+            this.ctx.fillText(label, x + 5, y - 7);
+            
+            // Add distance indicator
+            const distance = this.estimateDistance(prediction.bbox);
+            this.ctx.font = 'bold 12px Arial';
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillText(distance, x + 5, y + height - 5);
         });
     }
 
     /**
-     * Announce detected objects via speech
+     * Announce detected objects via speech with priority system
      */
     announceDetections(predictions) {
         const now = Date.now();
@@ -338,25 +530,73 @@ class BlindMate {
             return;
         }
         
-        const objects = predictions.map(p => p.class);
-        const uniqueObjects = [...new Set(objects)];
+        // Priority objects (most important for navigation)
+        const priorityObjects = ['person', 'chair', 'car', 'truck', 'bus', 'bicycle', 'motorcycle'];
         
-        // Calculate distances (simplified estimation based on bounding box size)
-        const objectsWithDistance = uniqueObjects.map(objectName => {
-            const prediction = predictions.find(p => p.class === objectName);
-            const distance = this.estimateDistance(prediction.bbox);
-            return { name: objectName, distance };
+        // Sort predictions by priority and distance
+        const sortedPredictions = predictions.sort((a, b) => {
+            const aPriority = priorityObjects.includes(a.class) ? 1 : 0;
+            const bPriority = priorityObjects.includes(b.class) ? 1 : 0;
+            
+            if (aPriority !== bPriority) {
+                return bPriority - aPriority; // Higher priority first
+            }
+            
+            // If same priority, sort by size (closer objects are larger)
+            const aSize = a.bbox[2] * a.bbox[3];
+            const bSize = b.bbox[2] * b.bbox[3];
+            return bSize - aSize;
         });
         
-        // Create announcement
-        let announcement = 'Objects detected: ';
-        objectsWithDistance.forEach((obj, index) => {
-            if (index > 0) announcement += ', ';
-            announcement += `${obj.name} at ${obj.distance}`;
-        });
+        // Take only the most important objects (max 2)
+        const importantObjects = sortedPredictions.slice(0, 2);
         
-        this.speak(announcement);
-        this.lastAnnouncement = now;
+        if (importantObjects.length > 0) {
+            const objectsWithDistance = importantObjects.map(prediction => {
+                const distance = this.estimateDistance(prediction.bbox);
+                const position = this.getRelativePosition(prediction.bbox);
+                return { 
+                    name: prediction.class, 
+                    distance: distance,
+                    position: position,
+                    confidence: Math.round(prediction.score * 100)
+                };
+            });
+            
+            // Create contextual announcement
+            let announcement = '';
+            objectsWithDistance.forEach((obj, index) => {
+                if (index > 0) announcement += '. Also, ';
+                
+                // More natural language
+                if (obj.name === 'person') {
+                    announcement += `person ${obj.position}, ${obj.distance}`;
+                } else {
+                    announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
+                }
+            });
+            
+            this.speak(announcement);
+            this.lastAnnouncement = now;
+        }
+    }
+    
+    /**
+     * Get relative position of object (left, center, right)
+     */
+    getRelativePosition(bbox) {
+        const [x, y, width, height] = bbox;
+        const centerX = x + width / 2;
+        const canvasCenter = this.canvas.width / 2;
+        const threshold = this.canvas.width * 0.25; // 25% threshold
+        
+        if (centerX < canvasCenter - threshold) {
+            return 'on your left';
+        } else if (centerX > canvasCenter + threshold) {
+            return 'on your right';
+        } else {
+            return 'ahead of you';
+        }
     }
 
     /**
@@ -590,57 +830,80 @@ class BlindMate {
     }
 
     /**
-     * Text-to-speech function with improved error handling
+     * Text-to-speech function with queue management and cooldown
      */
-    speak(text) {
+    speak(text, priority = false) {
         if (!this.synth || !text) {
-            console.warn('Speech synthesis not supported or no text provided');
             return;
         }
 
+        const now = Date.now();
+        
+        // If high priority or enough time has passed since last speech
+        if (priority || (now - this.lastSpeechTime > this.speechCooldown && !this.isSpeaking)) {
+            this._speakNow(text);
+        } else if (!priority) {
+            // Add to queue for non-priority speech
+            this.speechQueue.push(text);
+            if (!this.isSpeaking) {
+                this._processNextSpeech();
+            }
+        }
+    }
+    
+    /**
+     * Internal function to speak immediately
+     */
+    _speakNow(text) {
         try {
             // Cancel any ongoing speech
             this.synth.cancel();
+            this.isSpeaking = true;
+            this.lastSpeechTime = Date.now();
             
-            // Wait a moment for cancel to complete
-            setTimeout(() => {
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = this.currentLanguage;
-                utterance.rate = 0.8;
-                utterance.pitch = 1;
-                utterance.volume = 0.8;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = this.currentLanguage;
+            utterance.rate = 0.8;
+            utterance.pitch = 1;
+            utterance.volume = 0.8;
+            
+            // Find appropriate voice
+            const voices = this.synth.getVoices();
+            if (voices.length > 0) {
+                const voice = voices.find(v => v.lang === this.currentLanguage) || 
+                             voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
+                             voices.find(v => v.default);
                 
-                // Wait for voices to be loaded
-                const voices = this.synth.getVoices();
-                if (voices.length === 0) {
-                    // Voices not loaded yet, use default
-                    console.log('Using default voice, voices not yet loaded');
-                } else {
-                    // Try to find appropriate voice
-                    const voice = voices.find(v => v.lang === this.currentLanguage) || 
-                                 voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
-                                 voices.find(v => v.default);
-                    
-                    if (voice) {
-                        utterance.voice = voice;
-                    }
+                if (voice) {
+                    utterance.voice = voice;
                 }
-                
-                utterance.onerror = (event) => {
-                    console.warn('Speech synthesis error (non-critical):', event.error);
-                };
-                
-                utterance.onend = () => {
-                    console.log('Speech completed successfully');
-                };
-                
-                // Speak the utterance
-                this.synth.speak(utterance);
-                
-            }, 100);
+            }
+            
+            utterance.onend = () => {
+                this.isSpeaking = false;
+                setTimeout(() => this._processNextSpeech(), 500);
+            };
+            
+            utterance.onerror = () => {
+                this.isSpeaking = false;
+                setTimeout(() => this._processNextSpeech(), 500);
+            };
+            
+            this.synth.speak(utterance);
             
         } catch (error) {
-            console.warn('Speech synthesis error:', error);
+            this.isSpeaking = false;
+            console.warn('Speech error:', error);
+        }
+    }
+    
+    /**
+     * Process next item in speech queue
+     */
+    _processNextSpeech() {
+        if (this.speechQueue.length > 0 && !this.isSpeaking) {
+            const text = this.speechQueue.shift();
+            this._speakNow(text);
         }
     }
 

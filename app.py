@@ -4,8 +4,14 @@ from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 from gemini_service import GeminiService
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure logging with UTF-8 encoding
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 # Create Flask app
 app = Flask(__name__)
