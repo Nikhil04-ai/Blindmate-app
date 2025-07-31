@@ -74,6 +74,56 @@ def process_command():
         
     except Exception as e:
         logging.error(f"Error processing command: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/directions', methods=['POST'])
+def get_directions():
+    """Proxy endpoint for Google Maps Directions API to keep API key secure"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'origin' not in data or 'destination' not in data:
+            return jsonify({'error': 'Origin and destination required'}), 400
+        
+        origin = data['origin']
+        destination = data['destination']
+        mode = data.get('mode', 'walking')
+        
+        logging.info(f"Getting directions from {origin} to {destination}")
+        
+        # Mock response for demonstration - replace with real Google Maps API
+        mock_response = {
+            "status": "OK",
+            "routes": [{
+                "legs": [{
+                    "distance": {"text": "150 meters", "value": 150},
+                    "duration": {"text": "2 minutes", "value": 120},
+                    "steps": [
+                        {
+                            "distance": {"text": "50 meters", "value": 50},
+                            "duration": {"text": "1 minute", "value": 60}, 
+                            "html_instructions": "Walk straight for 50 meters",
+                            "start_location": {"lat": 26.4011, "lng": 80.3023},
+                            "end_location": {"lat": 26.4008, "lng": 80.3020}
+                        },
+                        {
+                            "distance": {"text": "100 meters", "value": 100},
+                            "duration": {"text": "1 minute", "value": 60},
+                            "html_instructions": "Turn left and walk 100 meters to your destination",
+                            "start_location": {"lat": 26.4008, "lng": 80.3020},
+                            "end_location": {"lat": 26.3995, "lng": 80.2997}
+                        }
+                    ],
+                    "start_location": {"lat": 26.4011, "lng": 80.3023},
+                    "end_location": {"lat": 26.3995, "lng": 80.2997}
+                }]
+            }]
+        }
+        
+        return jsonify(mock_response)
+        
+    except Exception as e:
+        logging.error(f"Error processing command: {e}")
         return jsonify({
             'error': 'Failed to process command',
             'action': 'unknown',

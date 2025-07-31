@@ -55,6 +55,23 @@ class BlindMate {
         this.isSpeaking = false;
         this.speechQueue = [];
         
+        // Navigation settings
+        this.isNavigating = false;
+        this.currentRoute = null;
+        this.currentStepIndex = 0;
+        this.locationWatcher = null;
+        this.routeDeviationThreshold = 15; // meters
+        
+        // Predefined locations (no database needed)
+        this.locations = {
+            'library': { lat: 26.4011, lng: 80.3023, name: 'Library' },
+            'stairs': { lat: 26.4004, lng: 80.3018, name: 'Stairs' },
+            'canteen': { lat: 26.3995, lng: 80.2997, name: 'Canteen' },
+            'entrance': { lat: 26.4015, lng: 80.3025, name: 'Main Entrance' },
+            'bathroom': { lat: 26.4008, lng: 80.3015, name: 'Bathroom' },
+            'office': { lat: 26.4012, lng: 80.3020, name: 'Office' }
+        };
+        
         // Wake word detection
         this.isListeningForWakeWord = true;
         this.wakeWords = ['hey blindmate', 'hey blind mate', 'blindmate'];
@@ -972,11 +989,21 @@ class BlindMate {
             // Extract destination
             const destination = cmd.replace(/take me to|navigate to|go to/g, '').trim();
             if (destination) {
-                this.speak(`Opening navigation to ${destination}`, true);
-                this.startNavigation(destination);
+                this.speak(`Navigating to ${destination}`, true);
+                this.navigateToLocation(destination);
             } else {
                 this.speak('Where would you like to go?', true);
             }
+        } else if (cmd.includes('preview') || cmd.includes('route to')) {
+            // Extract destination for route preview
+            const destination = cmd.replace(/preview route to|route to|preview/g, '').trim();
+            if (destination) {
+                this.previewRoute(destination);
+            } else {
+                this.speak('Which location would you like to preview?', true);
+            }
+        } else if (cmd.includes('stop navigation')) {
+            this.stopNavigation();
         } else if (cmd.includes('language') && cmd.includes('hindi')) {
             this.changeLanguage('hi-IN');
         } else if (cmd.includes('language') && cmd.includes('english')) {
@@ -1020,10 +1047,22 @@ class BlindMate {
                 
             case 'navigate':
                 if (destination) {
-                    await this.startNavigation(destination);
+                    await this.navigateToLocation(destination);
                 } else {
                     this.speak('I need a destination to navigate to', true);
                 }
+                break;
+                
+            case 'preview_route':
+                if (destination) {
+                    await this.previewRoute(destination);
+                } else {
+                    this.speak('I need a destination to preview the route', true);
+                }
+                break;
+                
+            case 'stop_navigation':
+                this.stopNavigation();
                 break;
                 
             case 'enable_location':
@@ -1055,42 +1094,360 @@ class BlindMate {
     }
 
     /**
-     * Start navigation to destination
+     * Navigate to a predefined location
      */
-    async startNavigation(destination) {
+    async navigateToLocation(destination) {
         if (!this.userLocation) {
-            this.speak('Location access is required for navigation. Please enable location first.');
+            this.speak('Location access is required for navigation. Please enable location first.', true);
             await this.requestLocation();
             return;
         }
         
+        // Normalize destination name
+        const destKey = destination.toLowerCase().trim();
+        const location = this.locations[destKey];
+        
+        if (!location) {
+            this.speak(`I don't know that location. Available locations are: ${Object.keys(this.locations).join(', ')}`, true);
+            return;
+        }
+        
         try {
-            this.speak(`I will help you navigate to ${destination}. Opening navigation in your default maps application.`);
+            this.updateStatus(`Getting directions to ${location.name}...`, 'primary');
+            this.speak(`Getting directions to ${location.name}`, true);
             
-            // Create navigation URL for default maps app
-            const lat = this.userLocation.latitude;
-            const lng = this.userLocation.longitude;
-            const encodedDestination = encodeURIComponent(destination);
+            // Get directions from Google Maps API
+            const route = await this.getDirections(
+                this.userLocation.latitude, 
+                this.userLocation.longitude,
+                location.lat,
+                location.lng
+            );
             
-            // Try Google Maps first, fallback to Apple Maps, then generic maps
-            const googleMapsUrl = `https://www.google.com/maps/dir/${lat},${lng}/${encodedDestination}`;
-            const appleMapsUrl = `http://maps.apple.com/?saddr=${lat},${lng}&daddr=${encodedDestination}&dirflg=w`;
-            const genericMapsUrl = `https://maps.google.com/maps?q=${encodedDestination}`;
-            
-            // Open navigation in new tab/window
-            const navigationWindow = window.open(googleMapsUrl, '_blank');
-            
-            if (navigationWindow) {
-                this.speak(`Navigation opened in a new window. You can also use voice commands like "next step" while navigating.`);
-            } else {
-                // Fallback - show directions manually
-                this.speak(`Please open your maps application and navigate to ${destination}. Your current location is latitude ${lat.toFixed(4)}, longitude ${lng.toFixed(4)}.`);
+            if (route) {
+                this.currentRoute = route;
+                this.currentStepIndex = 0;
+                this.isNavigating = true;
+                
+                // Update navigation status
+                this.elements.navigationStatus.textContent = 'Navigating';
+                this.elements.navigationStatus.className = 'badge bg-success';
+                
+                // Speak route overview
+                await this.speakRouteOverview(route, location.name);
+                
+                // Start position tracking for rerouting
+                this.startLocationTracking();
+                
+                this.updateStatus(`Navigating to ${location.name}`, 'success');
             }
             
         } catch (error) {
             console.error('Navigation error:', error);
-            this.speak(`I'll help you get to ${destination}. Please open your preferred navigation app and search for this location.`);
+            this.speak(`Sorry, I couldn't get directions to ${location.name}. Please try again or use your preferred navigation app.`, true);
         }
+    }
+    
+    /**
+     * Preview route to destination without starting navigation
+     */
+    async previewRoute(destination) {
+        if (!this.userLocation) {
+            this.speak('Location access is required for route preview. Please enable location first.', true);
+            await this.requestLocation();
+            return;
+        }
+        
+        const destKey = destination.toLowerCase().trim();
+        const location = this.locations[destKey];
+        
+        if (!location) {
+            this.speak(`I don't know that location. Available locations are: ${Object.keys(this.locations).join(', ')}`, true);
+            return;
+        }
+        
+        try {
+            this.updateStatus(`Previewing route to ${location.name}...`, 'primary');
+            
+            const route = await this.getDirections(
+                this.userLocation.latitude,
+                this.userLocation.longitude, 
+                location.lat,
+                location.lng
+            );
+            
+            if (route) {
+                await this.speakRoutePreview(route, location.name);
+                this.updateStatus(`Route preview completed for ${location.name}`, 'success');
+            }
+            
+        } catch (error) {
+            console.error('Route preview error:', error);
+            this.speak(`Sorry, I couldn't preview the route to ${location.name}`, true);
+        }
+    }
+    
+    /**
+     * Get directions from Google Maps API
+     */
+    async getDirections(originLat, originLng, destLat, destLng) {
+        try {
+            // Use backend proxy to avoid exposing API key
+            const response = await fetch('/api/directions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    origin: `${originLat},${originLng}`,
+                    destination: `${destLat},${destLng}`,
+                    mode: 'walking'
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'OK' && data.routes && data.routes.length > 0) {
+                return data.routes[0];
+            } else {
+                throw new Error('No routes found');
+            }
+            
+        } catch (error) {
+            console.error('Directions API error:', error);
+            // Fallback: calculate straight-line distance and basic directions
+            return this.getFallbackDirections(originLat, originLng, destLat, destLng);
+        }
+    }
+    
+    /**
+     * Fallback directions when API is unavailable
+     */
+    getFallbackDirections(originLat, originLng, destLat, destLng) {
+        const distance = this.calculateDistance(originLat, originLng, destLat, destLng);
+        const bearing = this.calculateBearing(originLat, originLng, destLat, destLng);
+        const direction = this.getDirectionFromBearing(bearing);
+        
+        return {
+            legs: [{
+                distance: { text: `${Math.round(distance)} meters`, value: distance },
+                duration: { text: `${Math.round(distance / 1.4)} minutes`, value: Math.round(distance / 1.4) * 60 },
+                steps: [{
+                    distance: { text: `${Math.round(distance)} meters`, value: distance },
+                    duration: { text: `${Math.round(distance / 1.4)} minutes`, value: Math.round(distance / 1.4) * 60 },
+                    html_instructions: `Walk ${direction} for ${Math.round(distance)} meters`,
+                    start_location: { lat: originLat, lng: originLng },
+                    end_location: { lat: destLat, lng: destLng }
+                }]
+            }]
+        };
+    }
+    
+    /**
+     * Speak route overview when starting navigation
+     */
+    async speakRouteOverview(route, destinationName) {
+        const leg = route.legs[0];
+        const totalDistance = leg.distance.text;
+        const totalTime = leg.duration.text;
+        
+        this.speak(`You are ${totalDistance} from ${destinationName}. Estimated walking time: ${totalTime}`, true);
+        
+        // Speak first 2-3 steps
+        const steps = leg.steps.slice(0, 3);
+        for (let i = 0; i < steps.length; i++) {
+            const step = steps[i];
+            const instruction = this.cleanHtmlInstructions(step.html_instructions);
+            
+            setTimeout(() => {
+                this.speak(`Step ${i + 1}: ${instruction}`, true);
+            }, (i + 1) * 3000);
+        }
+    }
+    
+    /**
+     * Speak route preview (first few steps only)
+     */
+    async speakRoutePreview(route, destinationName) {
+        const leg = route.legs[0];
+        const totalDistance = leg.distance.text;
+        const totalTime = leg.duration.text;
+        
+        this.speak(`Route preview to ${destinationName}: ${totalDistance}, about ${totalTime} walking`, true);
+        
+        setTimeout(() => {
+            if (leg.steps.length > 0) {
+                const firstStep = this.cleanHtmlInstructions(leg.steps[0].html_instructions);
+                this.speak(`First step: ${firstStep}`, true);
+            }
+        }, 2000);
+        
+        if (leg.steps.length > 1) {
+            setTimeout(() => {
+                const secondStep = this.cleanHtmlInstructions(leg.steps[1].html_instructions);
+                this.speak(`Then: ${secondStep}`, true);
+            }, 4000);
+        }
+    }
+    
+    /**
+     * Clean HTML instructions from Google Maps API
+     */
+    cleanHtmlInstructions(htmlInstructions) {
+        return htmlInstructions
+            .replace(/<[^>]*>/g, '') // Remove HTML tags
+            .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+            .replace(/&amp;/g, '&') // Replace HTML entities
+            .trim();
+    }
+    
+    /**
+     * Start location tracking for rerouting
+     */
+    startLocationTracking() {
+        if (!navigator.geolocation) {
+            console.warn('Geolocation not supported for tracking');
+            return;
+        }
+        
+        // Watch position every 5 seconds
+        this.locationWatcher = navigator.geolocation.watchPosition(
+            (position) => {
+                this.checkRouteDeviation(position.coords.latitude, position.coords.longitude);
+            },
+            (error) => {
+                console.error('Location tracking error:', error);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 5000
+            }
+        );
+    }
+    
+    /**
+     * Check if user has deviated from the route
+     */
+    checkRouteDeviation(currentLat, currentLng) {
+        if (!this.isNavigating || !this.currentRoute) return;
+        
+        const currentStep = this.currentRoute.legs[0].steps[this.currentStepIndex];
+        if (!currentStep) return;
+        
+        // Calculate distance to expected route point
+        const expectedLat = currentStep.start_location.lat;
+        const expectedLng = currentStep.start_location.lng;
+        const deviation = this.calculateDistance(currentLat, currentLng, expectedLat, expectedLng);
+        
+        // If user is too far off track, reroute
+        if (deviation > this.routeDeviationThreshold) {
+            this.speak('You have moved off the path. Recalculating route...', true);
+            this.reroute(currentLat, currentLng);
+        }
+    }
+    
+    /**
+     * Reroute from current position
+     */
+    async reroute(currentLat, currentLng) {
+        if (!this.isNavigating) return;
+        
+        // Find the destination from current route
+        const originalDestination = this.currentRoute.legs[0].end_location;
+        
+        try {
+            const newRoute = await this.getDirections(
+                currentLat, currentLng,
+                originalDestination.lat, originalDestination.lng
+            );
+            
+            if (newRoute) {
+                this.currentRoute = newRoute;
+                this.currentStepIndex = 0;
+                
+                const leg = newRoute.legs[0];
+                this.speak(`New route calculated. ${leg.distance.text} remaining.`, true);
+                
+                // Speak next instruction
+                if (leg.steps.length > 0) {
+                    setTimeout(() => {
+                        const instruction = this.cleanHtmlInstructions(leg.steps[0].html_instructions);
+                        this.speak(instruction, true);
+                    }, 2000);
+                }
+            }
+        } catch (error) {
+            console.error('Rerouting error:', error);
+            this.speak('Could not recalculate route. Please use your navigation app.', true);
+        }
+    }
+    
+    /**
+     * Stop navigation and location tracking
+     */
+    stopNavigation() {
+        this.isNavigating = false;
+        this.currentRoute = null;
+        this.currentStepIndex = 0;
+        
+        if (this.locationWatcher) {
+            navigator.geolocation.clearWatch(this.locationWatcher);
+            this.locationWatcher = null;
+        }
+        
+        this.speak('Navigation stopped', true);
+        this.updateStatus('Navigation stopped', 'info');
+        
+        // Update navigation status
+        this.elements.navigationStatus.textContent = 'Ready';
+        this.elements.navigationStatus.className = 'badge bg-secondary';
+    }
+    
+    /**
+     * Calculate distance between two points in meters
+     */
+    calculateDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lng2 - lng1) * Math.PI / 180;
+        
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        
+        return R * c;
+    }
+    
+    /**
+     * Calculate bearing between two points
+     */
+    calculateBearing(lat1, lng1, lat2, lng2) {
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δλ = (lng2 - lng1) * Math.PI / 180;
+        
+        const y = Math.sin(Δλ) * Math.cos(φ2);
+        const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+        
+        const θ = Math.atan2(y, x);
+        return (θ * 180 / Math.PI + 360) % 360;
+    }
+    
+    /**
+     * Get direction name from bearing
+     */
+    getDirectionFromBearing(bearing) {
+        const directions = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
+        const index = Math.round(bearing / 45) % 8;
+        return directions[index];
     }
 
     /**

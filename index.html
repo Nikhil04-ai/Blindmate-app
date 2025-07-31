@@ -128,15 +128,35 @@
                         <!-- Status Indicators -->
                         <div class="mt-4">
                             <div class="row text-center">
-                                <div class="col-6">
+                                <div class="col-4">
                                     <span class="badge bg-secondary" id="detectionStatus">Inactive</span>
                                     <br><small class="text-muted">Detection</small>
                                 </div>
-                                <div class="col-6">
+                                <div class="col-4">
                                     <span class="badge bg-secondary" id="voiceStatus">Ready</span>
                                     <br><small class="text-muted">Voice</small>
                                 </div>
+                                <div class="col-4">
+                                    <span class="badge bg-secondary" id="navigationStatus">Ready</span>
+                                    <br><small class="text-muted">Navigation</small>
+                                </div>
                             </div>
+                        </div>
+                        
+                        <!-- Available Locations -->
+                        <div class="mt-3">
+                            <h6 class="mb-2">Available Locations:</h6>
+                            <div class="d-flex flex-wrap gap-1">
+                                <span class="badge bg-info">Library</span>
+                                <span class="badge bg-info">Stairs</span>
+                                <span class="badge bg-info">Canteen</span>
+                                <span class="badge bg-info">Entrance</span>
+                                <span class="badge bg-info">Bathroom</span>
+                                <span class="badge bg-info">Office</span>
+                            </div>
+                            <small class="text-muted d-block mt-1">
+                                Say "take me to [location]" or "preview route to [location]"
+                            </small>
                         </div>
                     </div>
                 </div>
