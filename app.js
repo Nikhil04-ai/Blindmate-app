@@ -60,6 +60,10 @@ class BlindMate {
         this.wakeWords = ['hey blindmate', 'hey blind mate', 'blindmate'];
         this.continuousRecognition = null;
         
+        // Volume key detection
+        this.volumeUpPressed = false;
+        this.volumeKeyTimeout = null;
+        
         this.init();
     }
 
@@ -99,8 +103,17 @@ class BlindMate {
         this.elements.locationBtn.addEventListener('click', () => this.requestLocation());
         this.elements.languageSelect.addEventListener('change', (e) => this.changeLanguage(e.target.value));
         
-        // Keyboard shortcuts for accessibility
+        // Keyboard shortcuts for accessibility and volume key detection
         document.addEventListener('keydown', (e) => {
+            // Volume Up key detection (multiple key codes for different devices)
+            if (e.key === 'VolumeUp' || e.keyCode === 175 || e.keyCode === 174 || 
+                e.code === 'VolumeUp' || e.code === 'AudioVolumeUp') {
+                e.preventDefault();
+                this.handleVolumeUpPress();
+                return;
+            }
+            
+            // Ctrl + key shortcuts
             if (e.ctrlKey) {
                 switch(e.key) {
                     case 's':
@@ -191,7 +204,12 @@ class BlindMate {
             this.elements.voiceStatus.textContent = 'Ready';
             this.elements.voiceStatus.className = 'badge bg-secondary';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
-            this.updateStatus('Voice command completed.', 'success');
+            this.updateStatus('Voice command completed. Say "Hey BlindMate" or press Volume Up for next command.', 'success');
+            
+            // Restart continuous listening for wake words
+            setTimeout(() => {
+                this.startContinuousListening();
+            }, 1000);
         };
 
         // Add click handler for voice button
@@ -222,13 +240,18 @@ class BlindMate {
         this.continuousRecognition.lang = this.currentLanguage;
         
         this.continuousRecognition.onresult = (event) => {
-            const command = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
-            console.log('Continuous recognition heard:', command);
-            
-            // Check for wake words
-            if (this.wakeWords.some(wake => command.includes(wake))) {
-                console.log('Wake word detected!');
-                this.handleWakeWordDetected();
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const result = event.results[i];
+                const command = result[0].transcript.toLowerCase().trim();
+                
+                console.log('Continuous listening heard:', command);
+                
+                // Check for wake words with better matching
+                if (this.wakeWords.some(wake => command.includes(wake))) {
+                    console.log('Wake word detected:', command);
+                    this.handleWakeWordDetected();
+                    break;
+                }
             }
         };
         
@@ -325,12 +348,47 @@ class BlindMate {
      * Handle wake word detection
      */
     handleWakeWordDetected() {
+        console.log('Wake word "Hey BlindMate" detected!');
+        this.updateStatus('🎤 Wake word detected! Listening for command...', 'success');
+        
+        // Stop continuous listening temporarily
+        this.stopContinuousListening();
+        
+        // Give audio feedback
         this.speak('Yes, how can I help you?', true);
         
-        // Stop continuous listening and start command listening
+        // Start command listening after response
         setTimeout(() => {
             this.startVoiceCommand();
         }, 1500);
+    }
+    
+    /**
+     * Handle volume up key press for voice activation
+     */
+    handleVolumeUpPress() {
+        console.log('Volume Up key pressed for voice activation');
+        
+        // Prevent multiple rapid presses
+        if (this.volumeKeyTimeout) {
+            clearTimeout(this.volumeKeyTimeout);
+        }
+        
+        // If already listening, stop
+        if (this.isListening) {
+            this.stopVoiceCommand();
+            this.speak('Voice command stopped', true);
+            return;
+        }
+        
+        // Start voice command
+        this.updateStatus('🎤 Volume Up pressed - Starting voice command...', 'info');
+        this.speak('Voice command activated. Speak now.', true);
+        
+        // Small delay to let the speech finish
+        this.volumeKeyTimeout = setTimeout(() => {
+            this.startVoiceCommand();
+        }, 1000);
     }
     
     /**
@@ -432,16 +490,17 @@ class BlindMate {
     }
 
     /**
-     * Start voice interaction flow with permissions
+     * Start voice interaction flow
      */
     startVoiceInteraction() {
-        const greeting = this.languages[this.currentLanguage].greeting;
+        const greeting = 'Hello! I am BlindMate, your AI assistant. Say "Hey BlindMate" or press Volume Up anytime to give me voice commands.';
         this.speak(greeting, true); // High priority
         
         // Start continuous listening for wake word after greeting
         setTimeout(() => {
             this.startContinuousListening();
-        }, 2000);
+            this.updateStatus('👂 Always listening for "Hey BlindMate" or Volume Up key', 'info');
+        }, 4000);
     }
     
     /**
