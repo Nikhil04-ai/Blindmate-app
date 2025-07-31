@@ -91,6 +91,9 @@ class BlindMate {
         try {
             this.updateStatus('Initializing BlindMate...', 'info');
             
+            // Initialize DOM elements first
+            this.initDOMElements();
+            
             // Setup event listeners
             this.setupEventListeners();
             
@@ -108,6 +111,37 @@ class BlindMate {
             this.updateStatus('Failed to initialize. Please refresh the page.', 'danger');
             this.speak('Sorry, there was an error initializing the application. Please refresh the page.');
         }
+    }
+    
+    /**
+     * Initialize DOM elements with fallback for missing elements
+     */
+    initDOMElements() {
+        this.elements = {
+            video: document.getElementById('webcam'),
+            canvas: document.getElementById('canvas'),
+            startBtn: document.getElementById('startDetectionBtn'),
+            stopBtn: document.getElementById('stopDetectionBtn'),
+            voiceBtn: document.getElementById('voiceCommandBtn'),
+            locationBtn: document.getElementById('locationBtn'),
+            languageSelect: document.getElementById('languageSelect'),
+            detectionStatus: document.getElementById('detectionStatus'),
+            voiceStatus: document.getElementById('voiceStatus'),
+            navigationStatus: document.getElementById('navigationStatus') || this.createNavigationStatus(),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            detectionIndicator: document.getElementById('detectionIndicator')
+        };
+    }
+    
+    /**
+     * Create navigation status element if it doesn't exist
+     */
+    createNavigationStatus() {
+        const navStatus = document.createElement('span');
+        navStatus.id = 'navigationStatus';
+        navStatus.className = 'badge bg-secondary';
+        navStatus.textContent = 'Ready';
+        return navStatus;
     }
 
     /**
@@ -985,24 +1019,32 @@ class BlindMate {
         } else if (cmd.includes('location') || cmd.includes('where am i')) {
             this.speak('Enabling location services', true);
             this.requestLocation();
-        } else if (cmd.includes('take me') || cmd.includes('navigate')) {
+        } else if (cmd.includes('take me') || cmd.includes('navigate') || cmd.includes('go to')) {
             // Extract destination
-            const destination = cmd.replace(/take me to|navigate to|go to/g, '').trim();
+            let destination = cmd.replace(/take me to|navigate to|go to/g, '').trim();
+            
+            // Handle common phrase variations
+            if (cmd.includes('take me to the')) {
+                destination = cmd.replace(/take me to the/g, '').trim();
+            }
+            
             if (destination) {
+                console.log('Navigation command detected:', cmd, 'Destination:', destination);
                 this.speak(`Navigating to ${destination}`, true);
-                this.navigateToLocation(destination);
+                await this.navigateToLocation(destination);
             } else {
-                this.speak('Where would you like to go?', true);
+                this.speak('Where would you like to go? Available locations are: library, stairs, canteen, entrance, bathroom, office', true);
             }
         } else if (cmd.includes('preview') || cmd.includes('route to')) {
             // Extract destination for route preview
-            const destination = cmd.replace(/preview route to|route to|preview/g, '').trim();
+            let destination = cmd.replace(/preview route to|route to|preview/g, '').trim();
             if (destination) {
-                this.previewRoute(destination);
+                console.log('Preview command detected:', cmd, 'Destination:', destination);
+                await this.previewRoute(destination);
             } else {
                 this.speak('Which location would you like to preview?', true);
             }
-        } else if (cmd.includes('stop navigation')) {
+        } else if (cmd.includes('stop navigation') || cmd.includes('cancel navigation')) {
             this.stopNavigation();
         } else if (cmd.includes('language') && cmd.includes('hindi')) {
             this.changeLanguage('hi-IN');
@@ -1046,14 +1088,16 @@ class BlindMate {
                 break;
                 
             case 'navigate':
+                console.log('Gemini navigate action:', destination);
                 if (destination) {
                     await this.navigateToLocation(destination);
                 } else {
-                    this.speak('I need a destination to navigate to', true);
+                    this.speak('I need a destination to navigate to. Available locations are: library, stairs, canteen, entrance, bathroom, office', true);
                 }
                 break;
                 
             case 'preview_route':
+                console.log('Gemini preview action:', destination);
                 if (destination) {
                     await this.previewRoute(destination);
                 } else {
@@ -1062,6 +1106,7 @@ class BlindMate {
                 break;
                 
             case 'stop_navigation':
+                console.log('Gemini stop navigation action');
                 this.stopNavigation();
                 break;
                 
@@ -1097,24 +1142,50 @@ class BlindMate {
      * Navigate to a predefined location
      */
     async navigateToLocation(destination) {
+        console.log('navigateToLocation called with:', destination);
+        
         if (!this.userLocation) {
             this.speak('Location access is required for navigation. Please enable location first.', true);
             await this.requestLocation();
-            return;
+            if (!this.userLocation) {
+                return;
+            }
         }
         
-        // Normalize destination name
+        // Normalize destination name and try different variations
         const destKey = destination.toLowerCase().trim();
-        const location = this.locations[destKey];
+        console.log('Looking for location:', destKey);
+        console.log('Available locations:', Object.keys(this.locations));
+        
+        let location = this.locations[destKey];
+        
+        // Try fuzzy matching for common variations
+        if (!location) {
+            const locationKeys = Object.keys(this.locations);
+            const match = locationKeys.find(key => 
+                key.includes(destKey) || 
+                destKey.includes(key) ||
+                this.locations[key].name.toLowerCase().includes(destKey)
+            );
+            if (match) {
+                location = this.locations[match];
+                console.log('Found fuzzy match:', match, location);
+            }
+        }
         
         if (!location) {
-            this.speak(`I don't know that location. Available locations are: ${Object.keys(this.locations).join(', ')}`, true);
+            const availableLocations = Object.keys(this.locations).join(', ');
+            this.speak(`I don't know that location. Available locations are: ${availableLocations}`, true);
+            console.log('No location found for:', destKey);
             return;
         }
         
         try {
             this.updateStatus(`Getting directions to ${location.name}...`, 'primary');
             this.speak(`Getting directions to ${location.name}`, true);
+            
+            console.log('User location:', this.userLocation);
+            console.log('Destination:', location);
             
             // Get directions from Google Maps API
             const route = await this.getDirections(
@@ -1124,14 +1195,18 @@ class BlindMate {
                 location.lng
             );
             
+            console.log('Route received:', route);
+            
             if (route) {
                 this.currentRoute = route;
                 this.currentStepIndex = 0;
                 this.isNavigating = true;
                 
                 // Update navigation status
-                this.elements.navigationStatus.textContent = 'Navigating';
-                this.elements.navigationStatus.className = 'badge bg-success';
+                if (this.elements.navigationStatus) {
+                    this.elements.navigationStatus.textContent = 'Navigating';
+                    this.elements.navigationStatus.className = 'badge bg-success';
+                }
                 
                 // Speak route overview
                 await this.speakRouteOverview(route, location.name);
@@ -1140,11 +1215,13 @@ class BlindMate {
                 this.startLocationTracking();
                 
                 this.updateStatus(`Navigating to ${location.name}`, 'success');
+            } else {
+                this.speak(`Could not get directions to ${location.name}. Please try again.`, true);
             }
             
         } catch (error) {
             console.error('Navigation error:', error);
-            this.speak(`Sorry, I couldn't get directions to ${location.name}. Please try again or use your preferred navigation app.`, true);
+            this.speak(`Sorry, I couldn't get directions to ${location.name}. Please try again.`, true);
         }
     }
     
@@ -1152,17 +1229,36 @@ class BlindMate {
      * Preview route to destination without starting navigation
      */
     async previewRoute(destination) {
+        console.log('previewRoute called with:', destination);
+        
         if (!this.userLocation) {
             this.speak('Location access is required for route preview. Please enable location first.', true);
             await this.requestLocation();
-            return;
+            if (!this.userLocation) {
+                return;
+            }
         }
         
+        // Normalize destination name and try different variations
         const destKey = destination.toLowerCase().trim();
-        const location = this.locations[destKey];
+        let location = this.locations[destKey];
+        
+        // Try fuzzy matching for common variations
+        if (!location) {
+            const locationKeys = Object.keys(this.locations);
+            const match = locationKeys.find(key => 
+                key.includes(destKey) || 
+                destKey.includes(key) ||
+                this.locations[key].name.toLowerCase().includes(destKey)
+            );
+            if (match) {
+                location = this.locations[match];
+            }
+        }
         
         if (!location) {
-            this.speak(`I don't know that location. Available locations are: ${Object.keys(this.locations).join(', ')}`, true);
+            const availableLocations = Object.keys(this.locations).join(', ');
+            this.speak(`I don't know that location. Available locations are: ${availableLocations}`, true);
             return;
         }
         

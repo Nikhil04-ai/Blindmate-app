@@ -123,33 +123,8 @@ def get_directions():
         return jsonify(mock_response)
         
     except Exception as e:
-        logging.error(f"Error processing command: {e}")
-        return jsonify({
-            'error': 'Failed to process command',
-            'action': 'unknown',
-            'response': 'Sorry, I could not understand your command. Please try again.'
-        }), 500
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'BlindMate API',
-        'version': '1.0.0'
-    })
-
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors"""
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors"""
-    logging.error(f"Internal server error: {error}")
-    return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error in directions endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Bind to all interfaces on port 5000
     app.run(host='0.0.0.0', port=5000, debug=True)
