@@ -127,6 +127,7 @@ class BlindMate {
             languageSelect: document.getElementById('languageSelect'),
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
+            systemStatus: document.getElementById('systemStatus'),
             navigationStatus: document.getElementById('navigationStatus') || this.createNavigationStatus(),
             loadingOverlay: document.getElementById('loadingOverlay'),
             detectionIndicator: document.getElementById('detectionIndicator')
@@ -974,7 +975,7 @@ class BlindMate {
             this.updateStatus('Processing your command...', 'primary');
             
             // Send command to Gemini API for processing
-            const response = await fetch('/gemini', {
+            const response = await fetch('/api/process-command', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1000,14 +1001,14 @@ class BlindMate {
             
             // Fallback to basic command processing
             this.speak('Let me try to process that command locally.', true);
-            this.fallbackCommandProcessing(command);
+            await this.fallbackCommandProcessing(command);
         }
     }
     
     /**
      * Fallback command processing when Gemini is unavailable
      */
-    fallbackCommandProcessing(command) {
+    async fallbackCommandProcessing(command) {
         const cmd = command.toLowerCase();
         
         if (cmd.includes('start') && cmd.includes('detection')) {
@@ -1698,16 +1699,20 @@ class BlindMate {
      * Update system status display
      */
     updateStatus(message, type = 'info') {
-        this.elements.systemStatus.textContent = message;
-        this.elements.systemStatus.className = `alert alert-${type}`;
-        
-        // Auto-clear success and warning messages
-        if (type === 'success' || type === 'warning') {
-            setTimeout(() => {
-                if (this.elements.systemStatus.textContent === message) {
-                    this.updateStatus('System ready', 'info');
-                }
-            }, 5000);
+        if (this.elements && this.elements.systemStatus) {
+            this.elements.systemStatus.textContent = message;
+            this.elements.systemStatus.className = `alert alert-${type}`;
+            
+            // Auto-clear success and warning messages
+            if (type === 'success' || type === 'warning') {
+                setTimeout(() => {
+                    if (this.elements.systemStatus && this.elements.systemStatus.textContent === message) {
+                        this.updateStatus('System ready', 'info');
+                    }
+                }, 5000);
+            }
+        } else {
+            console.log('Status update:', message, type);
         }
     }
 }
