@@ -122,7 +122,7 @@ class GeminiService:
                 raise ValueError("Empty response from Gemini")
             
             # Parse JSON response with proper encoding
-            result = json.loads(response.text.encode('utf-8').decode('utf-8'))
+            result = json.loads(response.text)
             
             # Validate and enhance response
             return self._validate_and_enhance_response(result, language)
@@ -134,33 +134,36 @@ class GeminiService:
     def _create_system_prompt(self, language: str) -> str:
         """Create system prompt for Gemini based on language"""
         
-        base_prompt = """You are BlindMate, an AI assistant designed specifically for visually impaired users. Your role is to process voice commands and return structured JSON responses.
+        base_prompt = """You are BlindMate, an AI assistant for visually impaired users. Process voice commands and return JSON responses.
 
 Available actions:
-1. "start_detection" - Start object detection
-2. "stop_detection" - Stop object detection  
-3. "navigate" - Navigate to a destination
-4. "enable_location" - Enable location services
-5. "change_language" - Change interface language
-6. "unknown" - For unrecognized commands
+1. start_detection - Start object detection
+2. stop_detection - Stop object detection  
+3. navigate - Navigate to a destination
+4. preview_route - Preview route to destination
+5. stop_navigation - Stop current navigation
+6. save_location - Save current location with a name
+7. enable_location - Enable location services
+8. change_language - Change interface language
+9. unknown - For unrecognized commands
 
 Response format (JSON only):
 {
     "action": "action_name",
-    "destination": "place_name" (only for navigate action),
-    "language": "language_code" (only for change_language action),
-    "response": "human_readable_response_in_user_language"
+    "destination": "place_name",
+    "response": "what_to_speak_to_user"
 }
 
-Command interpretation rules:
-- "start detection", "begin detection", "start scanning" → start_detection
-- "stop detection", "stop scanning", "pause" → stop_detection
-- "take me to [place]", "navigate to [place]", "go to [place]" → navigate
-- "enable location", "turn on location", "location access" → enable_location
-- "change language to [language]", "switch to [language]" → change_language
-- Any other command → unknown
+Command examples:
+- "start detection" -> {"action": "start_detection", "response": "Starting object detection"}
+- "take me to library" -> {"action": "navigate", "destination": "library", "response": "Navigating to library"}
+- "preview route to canteen" -> {"action": "preview_route", "destination": "canteen", "response": "Previewing route to canteen"}
+- "save this location as hostel" -> {"action": "save_location", "destination": "hostel", "response": "Saving current location as hostel"}
+- "stop navigation" -> {"action": "stop_navigation", "response": "Stopping navigation"}
 
-Be helpful and provide clear responses in the user's language."""
+Available locations: library, stairs, canteen, entrance, bathroom, office
+
+Respond only with valid JSON, no extra text."""
 
         # Add language-specific instructions
         if language.startswith('hi'):

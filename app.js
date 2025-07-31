@@ -62,7 +62,7 @@ class BlindMate {
         this.locationWatcher = null;
         this.routeDeviationThreshold = 15; // meters
         
-        // Predefined locations (no database needed)
+        // Predefined locations (no database needed) + localStorage support
         this.locations = {
             'library': { lat: 26.4011, lng: 80.3023, name: 'Library' },
             'stairs': { lat: 26.4004, lng: 80.3018, name: 'Stairs' },
@@ -71,6 +71,9 @@ class BlindMate {
             'bathroom': { lat: 26.4008, lng: 80.3015, name: 'Bathroom' },
             'office': { lat: 26.4012, lng: 80.3020, name: 'Office' }
         };
+        
+        // Load saved locations from localStorage
+        this.loadSavedLocations();
         
         // Wake word detection
         this.isListeningForWakeWord = true;
@@ -82,6 +85,304 @@ class BlindMate {
         this.volumeKeyTimeout = null;
         
         this.init();
+    }
+
+    /**
+     * Load saved locations from localStorage
+     */
+    loadSavedLocations() {
+        try {
+            const savedLocations = localStorage.getItem('blindmate_locations');
+            if (savedLocations) {
+                const parsed = JSON.parse(savedLocations);
+                Object.assign(this.locations, parsed);
+                console.log('Loaded saved locations:', Object.keys(parsed));
+            }
+        } catch (error) {
+            console.warn('Failed to load saved locations:', error);
+        }
+    }
+
+    /**
+     * Save a new location to localStorage
+     */
+    async saveLocation(locationName, coordinates = null) {
+        try {
+            let coords = coordinates;
+            if (!coords) {
+                coords = await this.getCurrentPosition();
+            }
+            
+            // Add to locations object
+            this.locations[locationName.toLowerCase()] = {
+                lat: coords.lat,
+                lng: coords.lng,
+                name: locationName
+            };
+            
+            // Get existing saved locations
+            let savedLocations = {};
+            try {
+                const existing = localStorage.getItem('blindmate_locations');
+                if (existing) {
+                    savedLocations = JSON.parse(existing);
+                }
+            } catch (e) {
+                console.warn('Failed to parse existing locations');
+            }
+            
+            // Add new location to saved locations
+            savedLocations[locationName.toLowerCase()] = this.locations[locationName.toLowerCase()];
+            
+            // Save to localStorage
+            localStorage.setItem('blindmate_locations', JSON.stringify(savedLocations));
+            
+            this.updateActionStatus(`Location "${locationName}" saved successfully`);
+            this.speak(`Location ${locationName} has been saved`);
+            
+            return true;
+        } catch (error) {
+            console.error('Failed to save location:', error);
+            this.showError('Failed to save location. Please enable location access.');
+            return false;
+        }
+    }
+
+    /**
+     * Get current position with error handling
+     */
+    getCurrentPosition() {
+        return new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                reject(new Error('Geolocation is not supported'));
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    });
+                },
+                (error) => {
+                    let errorMessage = 'Location access failed. ';
+                    switch (error.code) {
+                        case error.PERMISSION_DENIED:
+                            errorMessage += 'Please enable GPS in your browser settings.';
+                            break;
+                        case error.POSITION_UNAVAILABLE:
+                            errorMessage += 'Location information is unavailable.';
+                            break;
+                        case error.TIMEOUT:
+                            errorMessage += 'Location request timed out.';
+                            break;
+                        default:
+                            errorMessage += 'An unknown error occurred.';
+                            break;
+                    }
+                    this.showError(errorMessage);
+                    this.speak('Location access is required. Please enable GPS in your browser settings.');
+                    reject(error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        });
+    }
+
+    /**
+     * Update action status display
+     */
+    updateActionStatus(message, type = 'info') {
+        if (this.elements && this.elements.status && this.elements.statusText) {
+            this.elements.statusText.textContent = message;
+            this.elements.status.style.display = 'block';
+            this.elements.status.className = `alert alert-${type} mt-2`;
+            
+            // Auto-hide after 5 seconds for non-critical messages
+            if (type !== 'danger') {
+                setTimeout(() => {
+                    if (this.elements.status && this.elements.statusText.textContent === message) {
+                        this.elements.status.style.display = 'none';
+                    }
+                }, 5000);
+            }
+        }
+    }
+
+    /**
+     * Show error message
+     */
+    showError(message) {
+        if (this.elements && this.elements.errorMessage && this.elements.errorText) {
+            this.elements.errorText.textContent = message;
+            this.elements.errorMessage.style.display = 'block';
+            
+            // Auto-hide after 8 seconds
+            setTimeout(() => {
+                if (this.elements.errorMessage && this.elements.errorText.textContent === message) {
+                    this.elements.errorMessage.style.display = 'none';
+                }
+            }, 8000);
+        }
+    }
+
+    /**
+     * Monitor user position for route deviation
+     */
+    monitorPosition(expectedPath) {
+        if (this.locationWatcher) {
+            navigator.geolocation.clearWatch(this.locationWatcher);
+        }
+        
+        this.locationWatcher = navigator.geolocation.watchPosition(
+            (position) => {
+                const currentPos = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+                
+                // Check if user has deviated from route
+                if (this.isNavigating && this.currentRoute && this.currentRoute.legs) {
+                    const currentStep = this.getCurrentRouteStep();
+                    if (currentStep) {
+                        const distance = this.calculateDistance(
+                            currentPos,
+                            {
+                                lat: currentStep.end_location.lat(),
+                                lng: currentStep.end_location.lng()
+                            }
+                        );
+                        
+                        // If user is more than threshold distance away, re-route
+                        if (distance > this.routeDeviationThreshold) {
+                            this.handleRouteDeviation(currentPos);
+                        }
+                    }
+                }
+            },
+            (error) => {
+                console.warn('Position monitoring error:', error);
+                this.showError('GPS monitoring failed. Navigation accuracy may be reduced.');
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 10000
+            }
+        );
+    }
+
+    /**
+     * Handle route deviation and re-calculate route
+     */
+    async handleRouteDeviation(currentPosition) {
+        try {
+            this.speak('You have moved off the route, recalculating...', true);
+            this.updateActionStatus('Re-routing...', 'warning');
+            
+            // Get the destination from current route
+            const destination = this.currentDestination;
+            if (!destination) {
+                this.showError('Cannot re-route: destination unknown');
+                return;
+            }
+            
+            // Re-calculate route from current position
+            await this.getDirections(currentPosition, destination);
+            
+            this.updateActionStatus('Route recalculated', 'success');
+            this.speak('New route calculated. Continuing navigation.');
+            
+        } catch (error) {
+            console.error('Re-routing failed:', error);
+            this.showError('Failed to recalculate route');
+            this.speak('Route recalculation failed. Please navigate manually.');
+        }
+    }
+
+    /**
+     * Get current route step
+     */
+    getCurrentRouteStep() {
+        if (!this.currentRoute || !this.currentRoute.legs || !this.currentRoute.legs[0]) {
+            return null;
+        }
+        
+        const steps = this.currentRoute.legs[0].steps;
+        if (this.currentStepIndex < steps.length) {
+            return steps[this.currentStepIndex];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Calculate distance between two coordinates (Haversine formula)
+     */
+    calculateDistance(pos1, pos2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = pos1.lat * Math.PI / 180;
+        const φ2 = pos2.lat * Math.PI / 180;
+        const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
+        const Δλ = (pos2.lng - pos1.lng) * Math.PI / 180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; // Distance in meters
+    }
+
+    /**
+     * Get location coordinates (supports both hardcoded and saved locations)
+     */
+    getLocationCoordinates(destinationName) {
+        const destKey = destinationName.toLowerCase().trim();
+        
+        // Check hardcoded locations first
+        let location = this.locations[destKey];
+        
+        // Try fuzzy matching for common variations
+        if (!location) {
+            const locationKeys = Object.keys(this.locations);
+            const match = locationKeys.find(key => 
+                key.includes(destKey) || 
+                destKey.includes(key) ||
+                this.locations[key].name.toLowerCase().includes(destKey)
+            );
+            if (match) {
+                location = this.locations[match];
+            }
+        }
+        
+        return location;
+    }
+
+    /**
+     * Simple stop navigation function
+     */
+    stopNavigationSimple() {
+        console.log('Stopping navigation');
+        
+        this.isNavigating = false;
+        this.currentRoute = null;
+        this.currentStepIndex = 0;
+        this.currentDestination = null;
+        
+        // Stop position monitoring
+        if (this.locationWatcher) {
+            navigator.geolocation.clearWatch(this.locationWatcher);
+            this.locationWatcher = null;
+        }
+        
+        this.updateActionStatus('Navigation stopped', 'warning');
+        this.speak('Navigation has been stopped', true);
     }
 
     /**
@@ -128,6 +429,10 @@ class BlindMate {
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
             systemStatus: document.getElementById('systemStatus'),
+            status: document.getElementById('status'),
+            statusText: document.getElementById('statusText'),
+            errorMessage: document.getElementById('error-message'),
+            errorText: document.getElementById('errorText'),
             navigationStatus: document.getElementById('navigationStatus') || this.createNavigationStatus(),
             loadingOverlay: document.getElementById('loadingOverlay'),
             detectionIndicator: document.getElementById('detectionIndicator')
@@ -1060,15 +1365,18 @@ class BlindMate {
      * Execute actions based on Gemini response
      */
     async executeAction(result) {
-        const { action, destination, response, language } = result;
+        console.log('Executing action:', result);
         
-        // Speak the response from Gemini
-        if (response) {
-            this.speak(response, true);
+        if (!result.action) {
+            this.speak('I could not understand that command.');
+            return;
         }
         
+        // Update action status
+        this.updateActionStatus(result.response || 'Processing command...', 'info');
+        
         // Execute the requested action
-        switch (action) {
+        switch (result.action) {
             case 'start_detection':
                 if (!this.isDetecting) {
                     await this.startDetection();
