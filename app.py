@@ -29,23 +29,11 @@ gemini_service = GeminiService()
 def index():
     """Serve the main application page"""
     try:
-        with open('simple_navigation.html', 'r', encoding='utf-8') as f:
+        with open('index.html', 'r', encoding='utf-8') as f:
             html_content = f.read()
         return html_content
     except FileNotFoundError:
-        # Fallback to navigation.html
-        try:
-            with open('navigation.html', 'r', encoding='utf-8') as f:
-                html_content = f.read()
-            return html_content
-        except FileNotFoundError:
-            # Final fallback to old index.html
-            try:
-                with open('index.html', 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                return html_content
-            except FileNotFoundError:
-                return "Application files not found", 404
+        return "Application files not found", 404
 
 @app.route('/styles.css')
 def styles():
