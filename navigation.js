@@ -530,6 +530,19 @@ class BlindMateNavigation {
             
             const data = await response.json();
             
+            if (!response.ok) {
+                // Handle specific HTTP error codes with user-friendly messages
+                if (response.status === 404) {
+                    throw new Error(data.error || 'Location not found');
+                } else if (response.status === 504) {
+                    throw new Error(data.error || 'Navigation request timed out. Please try again.');
+                } else if (response.status === 503) {
+                    throw new Error(data.error || 'Unable to connect to navigation service');
+                } else {
+                    throw new Error(data.error || 'Navigation service error');
+                }
+            }
+            
             if (!data.success || !data.route || !data.route.steps) {
                 throw new Error(data.error || 'No route found');
             }

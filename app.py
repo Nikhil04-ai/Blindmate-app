@@ -139,11 +139,19 @@ def get_directions():
         # First, geocode the destination if it's not coordinates
         destination_coords = await_geocode_location(destination, api_key)
         if not destination_coords:
-            return jsonify({'error': f'Could not find location: {destination}'}), 400
+            return jsonify({'error': 'Location not found'}), 404
+        
+        # Validate origin coordinates format with regex
+        import re
+        coord_pattern = r'^-?\d+\.?\d*,-?\d+\.?\d*$'
+        if not re.match(coord_pattern, origin):
+            return jsonify({'error': 'Invalid origin coordinates format. Expected: latitude,longitude'}), 400
         
         # Parse origin coordinates
         try:
             origin_lat, origin_lng = map(float, origin.split(','))
+            if not (-90 <= origin_lat <= 90) or not (-180 <= origin_lng <= 180):
+                return jsonify({'error': 'Coordinates out of valid range'}), 400
         except ValueError:
             return jsonify({'error': 'Invalid origin coordinates format'}), 400
         
@@ -155,7 +163,7 @@ def get_directions():
         )
         
         if not directions_data:
-            return jsonify({'error': 'Could not get directions'}), 400
+            return jsonify({'error': 'No route found'}), 404
         
         # Parse and clean the directions
         cleaned_directions = parse_ors_directions(directions_data, destination)
@@ -164,6 +172,12 @@ def get_directions():
         
         return jsonify(cleaned_directions)
         
+    except requests.exceptions.Timeout:
+        logging.error("ORS API timeout")
+        return jsonify({'error': 'Navigation request timed out. Please try again.'}), 504
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error getting directions: {e}")
+        return jsonify({'error': 'Unable to connect to navigation service'}), 503
     except Exception as e:
         logging.error(f"Error getting directions: {e}")
         return jsonify({'error': 'Directions request failed'}), 500
@@ -182,17 +196,36 @@ def await_geocode_location(location_name, api_key):
         }
         
         logging.info(f"Geocoding location: {location_name}")
-        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response = requests.get(url, headers=headers, params=params, timeout=30)
         response.raise_for_status()
         
         data = response.json()
-        if data['features']:
+        if data.get('features') and len(data['features']) > 0:
             coords = data['features'][0]['geometry']['coordinates']
             logging.info(f"Geocoded {location_name} to {coords}")
             return coords  # [lng, lat]
         
+        # If no results, try with country appended
+        logging.info(f"No results for {location_name}, trying with country")
+        params['text'] = f"{location_name}, India"  # Default to India, can be made configurable
+        
+        response2 = requests.get(url, headers=headers, params=params, timeout=30)
+        response2.raise_for_status()
+        
+        data2 = response2.json()
+        if data2.get('features') and len(data2['features']) > 0:
+            coords = data2['features'][0]['geometry']['coordinates']
+            logging.info(f"Geocoded {location_name} with country to {coords}")
+            return coords  # [lng, lat]
+        
         return None
         
+    except requests.exceptions.Timeout:
+        logging.error(f"Geocoding timeout for {location_name}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error geocoding {location_name}: {e}")
+        return None
     except Exception as e:
         logging.error(f"Geocoding error for {location_name}: {e}")
         return None
@@ -217,41 +250,71 @@ def await_get_ors_directions(start_coords, end_coords, api_key):
         }
         
         logging.info(f"Getting ORS directions from {start_coords} to {end_coords}")
-        response = requests.post(url, headers=headers, json=body, timeout=15)
+        response = requests.post(url, headers=headers, json=body, timeout=30)
         response.raise_for_status()
         
         data = response.json()
+        
+        # Validate ORS response structure
+        if not data.get('routes') or len(data['routes']) == 0:
+            logging.error("ORS returned no routes")
+            return None
+            
+        route = data['routes'][0]
+        if not route.get('segments') or len(route['segments']) == 0:
+            logging.error("ORS route has no segments")
+            return None
+            
         return data
         
+    except requests.exceptions.Timeout:
+        logging.error("ORS directions API timeout")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error getting ORS directions: {e}")
+        return None
     except Exception as e:
         logging.error(f"ORS directions error: {e}")
         return None
 
 def parse_ors_directions(directions_data, destination_name):
-    """Parse OpenRouteService directions response"""
+    """Parse OpenRouteService directions response with robust error handling"""
     try:
+        # Validate main structure
+        if not directions_data.get('routes') or len(directions_data['routes']) == 0:
+            raise ValueError("No routes in ORS response")
+            
         route = directions_data['routes'][0]
-        summary = route['summary']
-        segments = route['segments']
         
-        # Extract overall route info
-        total_distance_m = summary['distance']
-        total_duration_s = summary['duration']
+        # Validate route structure
+        summary = route.get('summary', {})
+        segments = route.get('segments', [])
+        geometry = route.get('geometry', {})
+        
+        if not summary:
+            raise ValueError("Missing route summary")
+        if not segments:
+            raise ValueError("Missing route segments")
+        
+        # Extract overall route info with defaults
+        total_distance_m = summary.get('distance', 0)
+        total_duration_s = summary.get('duration', 0)
         
         # Format distance and duration
         total_distance = f"{total_distance_m:.0f} m" if total_distance_m < 1000 else f"{total_distance_m/1000:.1f} km"
         total_duration = f"{total_duration_s//60:.0f} min" if total_duration_s >= 60 else f"{total_duration_s:.0f} sec"
         
-        # Parse each step
+        # Parse each step with error handling
         steps = []
         step_number = 1
+        geometry_coords = geometry.get('coordinates', []) if geometry else []
         
         for segment in segments:
             segment_steps = segment.get('steps', [])
             
             for step in segment_steps:
                 # Clean and format instruction
-                instruction = step.get('instruction', 'Continue')
+                instruction = step.get('instruction', 'Continue straight')
                 distance_m = step.get('distance', 0)
                 duration_s = step.get('duration', 0)
                 
@@ -259,16 +322,21 @@ def parse_ors_directions(directions_data, destination_name):
                 step_distance = f"{distance_m:.0f} m" if distance_m < 1000 else f"{distance_m/1000:.1f} km"
                 step_duration = f"{duration_s//60:.0f} min" if duration_s >= 60 else f"{duration_s:.0f} sec"
                 
-                # Get coordinates from route geometry (ORS uses [lng, lat] format)
-                way_points = step.get('way_points', [0, 1])
-                geometry = route.get('geometry', {}).get('coordinates', [])
-                
-                # Extract start and end coordinates for this step
+                # Get coordinates with safe handling
+                way_points = step.get('way_points', [0, 0])
                 start_idx = way_points[0] if len(way_points) > 0 else 0
                 end_idx = way_points[1] if len(way_points) > 1 else start_idx
                 
-                start_coord = geometry[start_idx] if start_idx < len(geometry) else [0, 0]
-                end_coord = geometry[end_idx] if end_idx < len(geometry) else start_coord
+                # Safely extract coordinates
+                if start_idx < len(geometry_coords):
+                    start_coord = geometry_coords[start_idx]
+                else:
+                    start_coord = [0, 0]
+                    
+                if end_idx < len(geometry_coords):
+                    end_coord = geometry_coords[end_idx]
+                else:
+                    end_coord = start_coord
                 
                 step_data = {
                     'step_number': step_number,
@@ -278,18 +346,33 @@ def parse_ors_directions(directions_data, destination_name):
                     'distance_meters': distance_m,
                     'duration_seconds': duration_s,
                     'start_location': {
-                        'lat': start_coord[1],  # ORS uses [lng, lat]
-                        'lng': start_coord[0]
+                        'lat': start_coord[1] if len(start_coord) > 1 else 0,  # ORS uses [lng, lat]
+                        'lng': start_coord[0] if len(start_coord) > 0 else 0
                     },
                     'end_location': {
-                        'lat': end_coord[1],    # ORS uses [lng, lat]
-                        'lng': end_coord[0]
+                        'lat': end_coord[1] if len(end_coord) > 1 else 0,    # ORS uses [lng, lat]
+                        'lng': end_coord[0] if len(end_coord) > 0 else 0
                     },
                     'maneuver': step.get('type', 'straight'),
                     'travel_mode': 'WALKING'
                 }
                 steps.append(step_data)
                 step_number += 1
+        
+        # Ensure we have at least one step
+        if not steps:
+            steps.append({
+                'step_number': 1,
+                'instruction': f'Walk to {destination_name}',
+                'distance': total_distance,
+                'duration': total_duration,
+                'distance_meters': total_distance_m,
+                'duration_seconds': total_duration_s,
+                'start_location': {'lat': 0, 'lng': 0},
+                'end_location': {'lat': 0, 'lng': 0},
+                'maneuver': 'straight',
+                'travel_mode': 'WALKING'
+            })
         
         return {
             'success': True,
@@ -306,8 +389,9 @@ def parse_ors_directions(directions_data, destination_name):
             }
         }
         
-    except (KeyError, IndexError) as e:
+    except (KeyError, IndexError, TypeError) as e:
         logging.error(f"Error parsing ORS directions data: {e}")
+        logging.error(f"ORS response structure: {directions_data}")
         raise ValueError("Invalid ORS directions data format")
 
 def clean_instruction_text(instruction):
