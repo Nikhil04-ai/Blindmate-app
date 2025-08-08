@@ -8,6 +8,17 @@ BlindMate is a comprehensive web application designed specifically for visually 
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+**Tutorial System Implementation (August 8, 2025)**
+- Created comprehensive onboarding tutorial system for first-time users
+- Added `onboarding.html` with 8-step interactive tutorial covering all BlindMate features
+- Implemented `onboarding.js` with voice-guided tutorial navigation, practice exercises, and accessibility features
+- Integrated tutorial access into main interface with prominent tutorial button
+- Added first-time user detection to automatically suggest tutorial for new users
+- Voice commands now include "tutorial", "help", "guide", "learn" to launch tutorial
+- Tutorial covers: welcome, voice commands, object detection, navigation, emergency features, customization, practice session, and completion
+
 ## System Architecture
 
 BlindMate follows a client-server architecture with a Python Flask backend and a vanilla JavaScript frontend, optimized for accessibility and real-time performance.

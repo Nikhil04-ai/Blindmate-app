@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlindMate Tutorial - Learn Navigation</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .tutorial-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .step-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            display: none; /* Hidden by default */
+        }
+        
+        .step-card.active {
+            display: block;
+            animation: slideIn 0.5s ease-in-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .step-number {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-right: 20px;
+        }
+        
+        .step-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin: 0;
+        }
+        
+        .step-content {
+            font-size: 1.2rem;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+        
+        .demo-button {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+        
+        .demo-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+        }
+        
+        .demo-button.primary {
+            background: linear-gradient(45deg, #28a745, #20c997);
+        }
+        
+        .demo-button.secondary {
+            background: linear-gradient(45deg, #6c757d, #5a6268);
+        }
+        
+        .navigation-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .progress-indicator {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .progress-dots {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .progress-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .progress-dot.active {
+            background: #28a745;
+            transform: scale(1.2);
+        }
+        
+        .progress-dot.completed {
+            background: #20c997;
+        }
+        
+        .feature-highlight {
+            background: rgba(40, 167, 69, 0.2);
+            border: 2px solid #28a745;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .voice-practice {
+            background: rgba(0, 123, 255, 0.2);
+            border: 2px solid #007bff;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .command-example {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 1.1rem;
+            border-left: 4px solid #28a745;
+        }
+        
+        .tips-box {
+            background: rgba(255, 193, 7, 0.2);
+            border: 2px solid #ffc107;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .safety-reminder {
+            background: rgba(220, 53, 69, 0.2);
+            border: 2px solid #dc3545;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .completion-badge {
+            text-align: center;
+            padding: 30px;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border-radius: 20px;
+            margin: 30px 0;
+        }
+        
+        .completion-badge i {
+            font-size: 4rem;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .tutorial-container {
+                padding: 15px;
+            }
+            
+            .step-card {
+                padding: 20px;
+            }
+            
+            .step-title {
+                font-size: 1.5rem;
+            }
+            
+            .step-content {
+                font-size: 1.1rem;
+            }
+            
+            .navigation-controls {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="tutorial-container">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="display-4 mb-3">
+                <i class="fas fa-graduation-cap"></i>
+                BlindMate Tutorial
+            </h1>
+            <p class="lead">Learn how to navigate with confidence using BlindMate</p>
+        </div>
+        
+        <!-- Progress Indicator -->
+        <div class="progress-indicator">
+            <div class="progress-dots" id="progressDots">
+                <!-- Progress dots will be generated by JavaScript -->
+            </div>
+            <p id="progressText">Step 1 of 8</p>
+        </div>
+        
+        <!-- Tutorial Steps -->
+        
+        <!-- Step 1: Welcome -->
+        <div class="step-card active" data-step="1">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <h2 class="step-title">Welcome to BlindMate</h2>
+            </div>
+            <div class="step-content">
+                <p>Welcome! BlindMate is your AI-powered navigation assistant designed specifically for visually impaired users. This tutorial will teach you how to use all the features safely and effectively.</p>
+                
+                <div class="feature-highlight">
+                    <h4><i class="fas fa-star"></i> What BlindMate Can Do</h4>
+                    <ul>
+                        <li>Real-time object detection and obstacle warnings</li>
+                        <li>Voice-controlled navigation to any location</li>
+                        <li>Step-by-step walking directions</li>
+                        <li>Multilingual support in 7 Indian languages</li>
+                        <li>Emergency assistance features</li>
+                    </ul>
+                </div>
+                
+                <div class="safety-reminder">
+                    <h4><i class="fas fa-shield-alt"></i> Safety First</h4>
+                    <p>BlindMate is an assistive tool to enhance your navigation. Always use your white cane, guide dog, or other mobility aids alongside BlindMate. Never rely solely on technology for navigation safety.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 2: Voice Commands -->
+        <div class="step-card" data-step="2">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <h2 class="step-title">Voice Commands</h2>
+            </div>
+            <div class="step-content">
+                <p>BlindMate responds to natural voice commands. You can speak normally - no need for specific phrases.</p>
+                
+                <div class="voice-practice">
+                    <h4><i class="fas fa-microphone"></i> Try These Commands</h4>
+                    <button class="demo-button primary" onclick="speakExample('Hello BlindMate')">
+                        <i class="fas fa-volume-up"></i> "Hello BlindMate"
+                    </button>
+                    <button class="demo-button primary" onclick="speakExample('What do you see?')">
+                        <i class="fas fa-volume-up"></i> "What do you see?"
+                    </button>
+                    <button class="demo-button primary" onclick="speakExample('Start object detection')">
+                        <i class="fas fa-volume-up"></i> "Start object detection"
+                    </button>
+                </div>
+                
+                <div class="command-example">
+                    <strong>Navigation Commands:</strong><br>
+                    • "Take me to the library"<br>
+                    • "Navigate to the nearest restaurant"<br>
+                    • "Where is the bathroom?"<br>
+                    • "Guide me home"
+                </div>
+                
+                <div class="command-example">
+                    <strong>Detection Commands:</strong><br>
+                    • "What's in front of me?"<br>
+                    • "Describe my surroundings"<br>
+                    • "Any obstacles ahead?"<br>
+                    • "Start detection mode"
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 3: Object Detection -->
+        <div class="step-card" data-step="3">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <h2 class="step-title">Object Detection</h2>
+            </div>
+            <div class="step-content">
+                <p>BlindMate uses AI to identify objects, people, and obstacles in real-time through your device's camera.</p>
+                
+                <div class="feature-highlight">
+                    <h4><i class="fas fa-eye"></i> What It Detects</h4>
+                    <ul>
+                        <li><strong>People:</strong> "Person ahead at 2 meters"</li>
+                        <li><strong>Vehicles:</strong> "Car approaching from the right"</li>
+                        <li><strong>Objects:</strong> "Chair in front, table to your left"</li>
+                        <li><strong>Animals:</strong> "Dog walking nearby"</li>
+                        <li><strong>Barriers:</strong> "Fence blocking the path"</li>
+                    </ul>
+                </div>
+                
+                <button class="demo-button" onclick="playDetectionDemo()">
+                    <i class="fas fa-play"></i> Hear Detection Demo
+                </button>
+                
+                <div class="tips-box">
+                    <h4><i class="fas fa-lightbulb"></i> Detection Tips</h4>
+                    <ul>
+                        <li>Hold your device steady for better accuracy</li>
+                        <li>Detection works best in good lighting</li>
+                        <li>BlindMate announces important objects automatically</li>
+                        <li>You can ask for detailed descriptions anytime</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 4: Navigation -->
+        <div class="step-card" data-step="4">
+            <div class="step-header">
+                <div class="step-number">4</div>
+                <h2 class="step-title">Navigation Features</h2>
+            </div>
+            <div class="step-content">
+                <p>Get step-by-step walking directions to any destination with voice guidance throughout your journey.</p>
+                
+                <div class="voice-practice">
+                    <h4><i class="fas fa-route"></i> Navigation Flow</h4>
+                    <div style="text-align: left; max-width: 600px; margin: 0 auto;">
+                        <p><strong>Step 1:</strong> Say your destination<br>
+                        <em>"Take me to the library"</em></p>
+                        
+                        <p><strong>Step 2:</strong> BlindMate confirms<br>
+                        <em>"Navigating to Central Library, 0.5 km away"</em></p>
+                        
+                        <p><strong>Step 3:</strong> Follow voice instructions<br>
+                        <em>"In 50 meters, turn right onto Main Street"</em></p>
+                        
+                        <p><strong>Step 4:</strong> Arrival confirmation<br>
+                        <em>"You have arrived at your destination"</em></p>
+                    </div>
+                </div>
+                
+                <button class="demo-button" onclick="playNavigationDemo()">
+                    <i class="fas fa-play"></i> Hear Navigation Demo
+                </button>
+                
+                <div class="command-example">
+                    <strong>Navigation Commands:</strong><br>
+                    • "Stop navigation"<br>
+                    • "Repeat last instruction"<br>
+                    • "How far to destination?"<br>
+                    • "Find alternate route"
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 5: Emergency Features -->
+        <div class="step-card" data-step="5">
+            <div class="step-header">
+                <div class="step-number">5</div>
+                <h2 class="step-title">Emergency Features</h2>
+            </div>
+            <div class="step-content">
+                <p>BlindMate includes safety features to help you in emergency situations.</p>
+                
+                <div class="safety-reminder">
+                    <h4><i class="fas fa-exclamation-triangle"></i> Emergency Commands</h4>
+                    <div class="command-example">
+                        <strong>Immediate Help:</strong><br>
+                        • "Emergency" - Activates emergency mode<br>
+                        • "Call for help" - Contacts emergency services<br>
+                        • "Share my location" - Sends location to contacts<br>
+                        • "I'm lost" - Provides detailed location info
+                    </div>
+                </div>
+                
+                <div class="feature-highlight">
+                    <h4><i class="fas fa-phone"></i> Emergency Mode Features</h4>
+                    <ul>
+                        <li>Loud audio alerts to attract attention</li>
+                        <li>Automatic location sharing</li>
+                        <li>Emergency contact notification</li>
+                        <li>Continuous obstacle warnings</li>
+                        <li>Easy access to emergency services</li>
+                    </ul>
+                </div>
+                
+                <button class="demo-button secondary" onclick="playEmergencyDemo()">
+                    <i class="fas fa-play"></i> Hear Emergency Demo
+                </button>
+            </div>
+        </div>
+        
+        <!-- Step 6: Customization -->
+        <div class="step-card" data-step="6">
+            <div class="step-header">
+                <div class="step-number">6</div>
+                <h2 class="step-title">Customization</h2>
+            </div>
+            <div class="step-content">
+                <p>Personalize BlindMate to work best for your needs and preferences.</p>
+                
+                <div class="feature-highlight">
+                    <h4><i class="fas fa-cogs"></i> Customizable Settings</h4>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Voice Settings</h5>
+                            <ul>
+                                <li>Speech speed (slow, normal, fast)</li>
+                                <li>Voice volume control</li>
+                                <li>Language selection</li>
+                                <li>Voice tone preferences</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Detection Settings</h5>
+                            <ul>
+                                <li>Alert frequency</li>
+                                <li>Object priority levels</li>
+                                <li>Distance thresholds</li>
+                                <li>Announcement styles</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="voice-practice">
+                    <h4><i class="fas fa-sliders-h"></i> Settings Commands</h4>
+                    <button class="demo-button" onclick="speakExample('Speak slower please')">
+                        "Speak slower please"
+                    </button>
+                    <button class="demo-button" onclick="speakExample('Switch to Hindi')">
+                        "Switch to Hindi"
+                    </button>
+                    <button class="demo-button" onclick="speakExample('Increase volume')">
+                        "Increase volume"
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 7: Practice Session -->
+        <div class="step-card" data-step="7">
+            <div class="step-header">
+                <div class="step-number">7</div>
+                <h2 class="step-title">Practice Session</h2>
+            </div>
+            <div class="step-content">
+                <p>Let's practice using BlindMate in a safe environment. Try these exercises to build confidence.</p>
+                
+                <div class="voice-practice">
+                    <h4><i class="fas fa-dumbbell"></i> Practice Exercises</h4>
+                    
+                    <div id="practiceExercise" class="mb-4">
+                        <h5 id="exerciseTitle">Exercise 1: Basic Greeting</h5>
+                        <p id="exerciseInstruction">Say "Hello BlindMate" and wait for a response.</p>
+                        <button class="demo-button primary" id="practiceButton" onclick="startPractice()">
+                            <i class="fas fa-microphone"></i> Start Practice
+                        </button>
+                        <button class="demo-button secondary" onclick="skipExercise()">
+                            <i class="fas fa-forward"></i> Skip Exercise
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="tips-box">
+                    <h4><i class="fas fa-graduation-cap"></i> Practice Tips</h4>
+                    <ul>
+                        <li>Speak clearly and at a normal pace</li>
+                        <li>Wait for BlindMate to finish speaking before your next command</li>
+                        <li>Practice in a quiet environment initially</li>
+                        <li>Don't worry about perfect commands - BlindMate understands natural speech</li>
+                    </ul>
+                </div>
+                
+                <div id="practiceProgress" style="display: none;">
+                    <h5>Practice Progress</h5>
+                    <div class="progress mb-3">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 0%" id="practiceProgressBar"></div>
+                    </div>
+                    <p id="practiceStatus">Ready to begin</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 8: Completion -->
+        <div class="step-card" data-step="8">
+            <div class="step-header">
+                <div class="step-number">8</div>
+                <h2 class="step-title">Tutorial Complete!</h2>
+            </div>
+            <div class="step-content">
+                <div class="completion-badge">
+                    <i class="fas fa-trophy"></i>
+                    <h3>Congratulations!</h3>
+                    <p>You've completed the BlindMate tutorial and are ready to navigate with confidence.</p>
+                </div>
+                
+                <div class="feature-highlight">
+                    <h4><i class="fas fa-bookmark"></i> Quick Reference</h4>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Essential Commands</h5>
+                            <ul>
+                                <li>"Start detection"</li>
+                                <li>"Take me to [place]"</li>
+                                <li>"What's around me?"</li>
+                                <li>"Emergency"</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Remember</h5>
+                            <ul>
+                                <li>Always use mobility aids</li>
+                                <li>Keep your device charged</li>
+                                <li>Practice in safe areas first</li>
+                                <li>Update your emergency contacts</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-4">
+                    <button class="demo-button primary" onclick="launchBlindMate()">
+                        <i class="fas fa-rocket"></i> Launch BlindMate
+                    </button>
+                    <button class="demo-button secondary" onclick="restartTutorial()">
+                        <i class="fas fa-redo"></i> Restart Tutorial
+                    </button>
+                </div>
+                
+                <div class="tips-box">
+                    <h4><i class="fas fa-question-circle"></i> Need Help?</h4>
+                    <p>Access this tutorial anytime by saying "Help" or "Tutorial" to BlindMate. For technical support, visit our help center or contact support.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Navigation Controls -->
+        <div class="navigation-controls">
+            <button class="demo-button secondary" id="prevButton" onclick="previousStep()" disabled>
+                <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            
+            <button class="demo-button" onclick="toggleAudio()" id="audioToggle">
+                <i class="fas fa-volume-up"></i> Audio On
+            </button>
+            
+            <button class="demo-button primary" id="nextButton" onclick="nextStep()">
+                Next <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="onboarding.js"></script>
+</body>
+</html>

@@ -392,6 +392,9 @@ class BlindMate {
         try {
             this.updateStatus('Initializing BlindMate...', 'info');
             
+            // Check if this is a first-time user
+            this.checkFirstTimeUser();
+            
             // Initialize DOM elements first
             this.initDOMElements();
             
@@ -1356,8 +1359,13 @@ class BlindMate {
             this.changeLanguage('hi-IN');
         } else if (cmd.includes('language') && cmd.includes('english')) {
             this.changeLanguage('en-IN');
+        } else if (cmd.includes('tutorial') || cmd.includes('help') || cmd.includes('guide') || cmd.includes('learn')) {
+            this.speak('Starting BlindMate tutorial. This will help you learn all the features.', true);
+            setTimeout(() => {
+                window.location.href = '/tutorial';
+            }, 2000);
         } else {
-            this.speak('I did not understand that command. Try saying start detection, stop, or take me to a location.', true);
+            this.speak('I did not understand that command. Try saying start detection, stop, take me to a location, or start tutorial for help.', true);
         }
     }
 
@@ -2000,6 +2008,31 @@ class BlindMate {
         if (this.speechQueue.length > 0 && !this.isSpeaking) {
             const text = this.speechQueue.shift();
             this._speakNow(text);
+        }
+    }
+
+    /**
+     * Check if this is a first-time user and offer tutorial
+     */
+    checkFirstTimeUser() {
+        const hasCompletedTutorial = localStorage.getItem('blindmate_tutorial_completed');
+        const hasUsedApp = localStorage.getItem('blindmate_first_use');
+        
+        if (!hasCompletedTutorial && !hasUsedApp) {
+            // Mark that the user has seen the app
+            localStorage.setItem('blindmate_first_use', 'true');
+            
+            // Wait a moment for the interface to load, then offer tutorial
+            setTimeout(() => {
+                this.speak('Welcome to BlindMate! This is your first time using the app. Would you like to start with a guided tutorial to learn all the features? You can also access the tutorial anytime by saying "start tutorial" or clicking the tutorial button.');
+                
+                // Show tutorial button prominently
+                const tutorialButton = document.getElementById('tutorialButton');
+                if (tutorialButton) {
+                    tutorialButton.classList.add('btn-warning');
+                    tutorialButton.innerHTML = '<i class="fas fa-graduation-cap"></i> Recommended: Start Tutorial';
+                }
+            }, 2000);
         }
     }
 

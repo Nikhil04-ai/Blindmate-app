@@ -75,6 +75,26 @@ def service_worker():
     except FileNotFoundError:
         return "Service worker not found", 404
 
+@app.route('/tutorial')
+def tutorial():
+    """Serve the onboarding tutorial page"""
+    try:
+        with open('onboarding.html', 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        return html_content
+    except FileNotFoundError:
+        return "Tutorial not found", 404
+
+@app.route('/onboarding.js')
+def onboarding_js():
+    """Serve onboarding JavaScript file"""
+    try:
+        with open('onboarding.js', 'r', encoding='utf-8') as f:
+            js_content = f.read()
+        return js_content, 200, {'Content-Type': 'application/javascript'}
+    except FileNotFoundError:
+        return "Onboarding JavaScript file not found", 404
+
 @app.route('/api/process-command', methods=['POST'])
 def process_command():
     """Process voice commands using Gemini API"""

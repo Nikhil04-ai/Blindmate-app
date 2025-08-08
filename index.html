@@ -71,6 +71,15 @@
                         </h3>
                     </div>
                     <div class="card-body d-flex flex-column">
+                        <!-- Tutorial Access -->
+                        <div class="mb-3">
+                            <button id="tutorialButton" class="btn btn-info w-100 mb-2" onclick="launchTutorial()">
+                                <i class="fas fa-graduation-cap" aria-hidden="true"></i>
+                                Start Tutorial
+                            </button>
+                            <small class="text-muted">New to BlindMate? Start with our guided tutorial</small>
+                        </div>
+
                         <!-- Status Display -->
                         <div class="mb-4">
                             <h5>System Status</h5>
@@ -194,5 +203,18 @@
     
     <!-- Main Application Script -->
     <script src="app.js"></script>
+    
+    <!-- Tutorial Integration JavaScript -->
+    <script>
+        // Tutorial launch function
+        function launchTutorial() {
+            if (window.blindMate) {
+                window.blindMate.speak('Starting BlindMate tutorial. This will help you learn all the features.');
+            }
+            setTimeout(() => {
+                window.location.href = '/tutorial';
+            }, 2000);
+        }
+    </script>
 </body>
 </html>
