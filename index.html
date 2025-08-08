@@ -135,16 +135,16 @@
                                 Voice Command
                             </button>
                             
-                            <!-- Enhanced Navigation Button -->
-                            <button id="navigationBtn" class="btn btn-primary btn-lg" onclick="navigation.startListening()">
-                                <i class="fas fa-route" aria-hidden="true"></i>
-                                Start Navigation
+                            <!-- Universal Navigation Button -->
+                            <button id="mainButton" class="btn btn-primary btn-lg main-nav-button">
+                                <i class="fas fa-microphone" aria-hidden="true"></i>
+                                Start Listening
                             </button>
                             
                             <small class="text-muted text-center mt-1 mb-2">
-                                <strong>Voice Activation:</strong><br>
-                                Say "Go to [destination]" or press Volume Up<br>
-                                <em>Commands: "take me to library", "navigate to canteen"</em>
+                                <strong>Universal Navigation:</strong><br>
+                                Say "Go to [any place]" - works with any Google Maps location<br>
+                                <em>Examples: "Take me to India Gate", "Go to Central Park", "Navigate to Times Square"</em>
                             </small>
                             
                             <button id="locationBtn" class="btn btn-warning btn-lg">
@@ -152,11 +152,7 @@
                                 Enable Location
                             </button>
                             
-                            <!-- Emergency Stop Button -->
-                            <button id="emergencyStop" class="btn btn-danger btn-sm">
-                                <i class="fas fa-hand" aria-hidden="true"></i>
-                                Emergency Stop
-                            </button>
+
                         </div>
 
                         <!-- Status Indicators -->
@@ -177,45 +173,38 @@
                             </div>
                         </div>
                         
-                        <!-- Available Locations -->
+                        <!-- Navigation Instructions -->
                         <div class="mt-3">
-                            <h6 class="mb-2">Available Locations:</h6>
-                            <div class="d-flex flex-wrap gap-1">
-                                <span class="badge bg-info">Library</span>
-                                <span class="badge bg-info">Stairs</span>
-                                <span class="badge bg-info">Canteen</span>
-                                <span class="badge bg-info">Entrance</span>
-                                <span class="badge bg-info">Bathroom</span>
-                                <span class="badge bg-info">Office</span>
+                            <h6 class="mb-2">Navigation Guide:</h6>
+                            <div class="card border-success">
+                                <div class="card-body p-2">
+                                    <p class="mb-2 text-success"><i class="fas fa-info-circle"></i> <strong>Works with ANY location!</strong></p>
+                                    <ul class="mb-2 small">
+                                        <li>"Take me to India Gate"</li>
+                                        <li>"Go to Connaught Place" </li>
+                                        <li>"Navigate to Central Park"</li>
+                                        <li>"Directions to Times Square"</li>
+                                    </ul>
+                                    <p class="mb-0 small text-muted">BlindMate will confirm destination and provide step-by-step walking directions with live GPS tracking and automatic rerouting.</p>
+                                </div>
                             </div>
-                            <small class="text-muted d-block mt-1">
-                                Say "go to [location]" or any address for Google Maps navigation
-                            </small>
                         </div>
                         
-                        <!-- Navigation Instructions Display -->
-                        <div id="navigationInfo" class="mt-3 d-none">
-                            <div class="card border-primary">
-                                <div class="card-header bg-primary text-white">
-                                    <h6 class="mb-0">
-                                        <i class="fas fa-route"></i> Current Navigation
-                                    </h6>
-                                </div>
-                                <div class="card-body">
-                                    <div id="instructionText" class="fw-bold mb-2">Ready to navigate</div>
-                                    <div class="row">
-                                        <div class="col-6">
-                                            <small class="text-muted">Step</small>
-                                            <div id="currentStep" class="fw-bold">-</div>
-                                        </div>
-                                        <div class="col-6">
-                                            <small class="text-muted">Distance</small>
-                                            <div id="stepDistance" class="fw-bold">-</div>
-                                        </div>
-                                    </div>
+                        <!-- Status Display Area -->
+                        <div class="mt-3">
+                            <div class="card border-info">
+                                <div class="card-body p-3">
+                                    <div id="statusText" class="h6 mb-1">Ready to Navigate</div>
+                                    <div id="instructionText" class="small text-muted">Press the button or say "Hey BlindMate, go to [destination]"</div>
                                 </div>
                             </div>
                         </div>
+                        
+                        <!-- Emergency Stop (initially hidden) -->
+                        <button id="emergencyStop" class="btn btn-danger btn-lg w-100 mt-2" style="display: none;">
+                            <i class="fas fa-stop" aria-hidden="true"></i>
+                            Emergency Stop Navigation
+                        </button>
                     </div>
                 </div>
             </div>
@@ -247,8 +236,21 @@
     <!-- Enhanced Navigation System -->
     <script src="navigation.js"></script>
     
-    <!-- Tutorial Integration JavaScript -->
+    <!-- Universal Navigation Integration -->
     <script>
+        // Initialize Universal Navigation System
+        let navigation;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize BlindMate Navigation System
+            navigation = new BlindMateNavigation();
+            
+            // Make navigation globally accessible
+            window.navigation = navigation;
+            
+            console.log('Universal Navigation System initialized');
+        });
+        
         // Tutorial launch function
         function launchTutorial() {
             if (window.blindMate) {
