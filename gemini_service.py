@@ -161,7 +161,8 @@ Command examples:
 - "save this location as hostel" -> {"action": "save_location", "destination": "hostel", "response": "Saving current location as hostel"}
 - "stop navigation" -> {"action": "stop_navigation", "response": "Stopping navigation"}
 
-Available locations: library, stairs, canteen, entrance, bathroom, office
+Navigation works with ANY location worldwide - users can name any place, address, or landmark.
+Examples: "take me to Central Park", "go to India Gate", "navigate to Eiffel Tower", "directions to Starbucks nearby"
 
 Respond only with valid JSON, no extra text."""
 

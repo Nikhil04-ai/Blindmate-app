@@ -120,7 +120,7 @@ def process_command():
 
 @app.route('/api/directions', methods=['POST'])
 def get_directions():
-    """Get walking directions from Google Directions API"""
+    """Get walking directions from OpenRouteService API"""
     try:
         data = request.get_json()
         
@@ -129,128 +129,202 @@ def get_directions():
         
         origin = data['origin']
         destination = data['destination']
-        mode = data.get('mode', 'walking')
         
-        # Get Google API key from environment
-        api_key = os.environ.get('GOOGLE_API_KEY')
+        # Get ORS API key from environment
+        api_key = os.environ.get('ORS_API_KEY')
         if not api_key:
-            logging.error("GOOGLE_API_KEY not found in environment variables")
-            return jsonify({'error': 'Google API key not configured'}), 500
+            logging.error("ORS_API_KEY not found in environment variables")
+            return jsonify({'error': 'OpenRouteService API key not configured'}), 500
         
-        # Call Google Directions API
-        url = 'https://maps.googleapis.com/maps/api/directions/json'
-        params = {
-            'origin': origin,
-            'destination': destination,
-            'mode': mode,
-            'key': api_key,
-            'units': 'metric',
-            'language': 'en'
-        }
+        # First, geocode the destination if it's not coordinates
+        destination_coords = await_geocode_location(destination, api_key)
+        if not destination_coords:
+            return jsonify({'error': f'Could not find location: {destination}'}), 400
         
-        logging.info(f"Getting directions from {origin} to {destination}")
+        # Parse origin coordinates
+        try:
+            origin_lat, origin_lng = map(float, origin.split(','))
+        except ValueError:
+            return jsonify({'error': 'Invalid origin coordinates format'}), 400
         
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        # Get walking directions from ORS
+        directions_data = await_get_ors_directions(
+            [origin_lng, origin_lat], 
+            destination_coords, 
+            api_key
+        )
         
-        directions_data = response.json()
-        
-        if directions_data['status'] != 'OK':
-            error_msg = directions_data.get('error_message', 'Directions request failed')
-            logging.error(f"Google Directions API error: {directions_data['status']} - {error_msg}")
-            return jsonify({'error': f'Directions API error: {directions_data["status"]}'}), 400
+        if not directions_data:
+            return jsonify({'error': 'Could not get directions'}), 400
         
         # Parse and clean the directions
-        cleaned_directions = parse_directions(directions_data)
+        cleaned_directions = parse_ors_directions(directions_data, destination)
         
-        logging.info(f"Successfully got directions with {len(cleaned_directions.get('steps', []))} steps")
+        logging.info(f"Successfully got ORS directions with {len(cleaned_directions.get('steps', []))} steps")
         
         return jsonify(cleaned_directions)
         
-    except requests.exceptions.RequestException as e:
-        logging.error(f"HTTP error getting directions: {e}")
-        return jsonify({'error': 'Failed to connect to Google Directions API'}), 500
     except Exception as e:
         logging.error(f"Error getting directions: {e}")
         return jsonify({'error': 'Directions request failed'}), 500
 
-def parse_directions(directions_data):
-    """Parse Google Directions response and clean HTML from instructions"""
+def await_geocode_location(location_name, api_key):
+    """Geocode location name using OpenRouteService"""
+    try:
+        url = 'https://api.openrouteservice.org/geocode/search'
+        headers = {
+            'Authorization': api_key,
+            'Content-Type': 'application/json'
+        }
+        params = {
+            'text': location_name,
+            'size': 1  # We only need the best match
+        }
+        
+        logging.info(f"Geocoding location: {location_name}")
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        if data['features']:
+            coords = data['features'][0]['geometry']['coordinates']
+            logging.info(f"Geocoded {location_name} to {coords}")
+            return coords  # [lng, lat]
+        
+        return None
+        
+    except Exception as e:
+        logging.error(f"Geocoding error for {location_name}: {e}")
+        return None
+
+def await_get_ors_directions(start_coords, end_coords, api_key):
+    """Get walking directions from OpenRouteService"""
+    try:
+        url = 'https://api.openrouteservice.org/v2/directions/foot-walking'
+        headers = {
+            'Authorization': api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        body = {
+            'coordinates': [start_coords, end_coords],
+            'format': 'json',
+            'units': 'm',
+            'language': 'en',
+            'geometry': 'true',
+            'instructions': 'true',
+            'instruction_format': 'text'
+        }
+        
+        logging.info(f"Getting ORS directions from {start_coords} to {end_coords}")
+        response = requests.post(url, headers=headers, json=body, timeout=15)
+        response.raise_for_status()
+        
+        data = response.json()
+        return data
+        
+    except Exception as e:
+        logging.error(f"ORS directions error: {e}")
+        return None
+
+def parse_ors_directions(directions_data, destination_name):
+    """Parse OpenRouteService directions response"""
     try:
         route = directions_data['routes'][0]
-        leg = route['legs'][0]
+        summary = route['summary']
+        segments = route['segments']
         
         # Extract overall route info
-        total_distance = leg['distance']['text']
-        total_duration = leg['duration']['text']
+        total_distance_m = summary['distance']
+        total_duration_s = summary['duration']
         
-        # Parse each step and clean HTML
+        # Format distance and duration
+        total_distance = f"{total_distance_m:.0f} m" if total_distance_m < 1000 else f"{total_distance_m/1000:.1f} km"
+        total_duration = f"{total_duration_s//60:.0f} min" if total_duration_s >= 60 else f"{total_duration_s:.0f} sec"
+        
+        # Parse each step
         steps = []
-        for i, step in enumerate(leg['steps']):
-            # Clean HTML from instructions
-            clean_instruction = clean_html_instruction(step['html_instructions'])
+        step_number = 1
+        
+        for segment in segments:
+            segment_steps = segment.get('steps', [])
             
-            step_data = {
-                'step_number': i + 1,
-                'instruction': clean_instruction,
-                'distance': step['distance']['text'],
-                'duration': step['duration']['text'],
-                'distance_meters': step['distance']['value'],
-                'duration_seconds': step['duration']['value'],
-                'start_location': {
-                    'lat': step['start_location']['lat'],
-                    'lng': step['start_location']['lng']
-                },
-                'end_location': {
-                    'lat': step['end_location']['lat'],
-                    'lng': step['end_location']['lng']
-                },
-                'maneuver': step.get('maneuver', 'straight'),
-                'polyline': step.get('polyline', {}).get('points', ''),
-                'travel_mode': step.get('travel_mode', 'WALKING')
-            }
-            steps.append(step_data)
+            for step in segment_steps:
+                # Clean and format instruction
+                instruction = step.get('instruction', 'Continue')
+                distance_m = step.get('distance', 0)
+                duration_s = step.get('duration', 0)
+                
+                # Format step distance and duration
+                step_distance = f"{distance_m:.0f} m" if distance_m < 1000 else f"{distance_m/1000:.1f} km"
+                step_duration = f"{duration_s//60:.0f} min" if duration_s >= 60 else f"{duration_s:.0f} sec"
+                
+                # Get coordinates from route geometry (ORS uses [lng, lat] format)
+                way_points = step.get('way_points', [0, 1])
+                geometry = route.get('geometry', {}).get('coordinates', [])
+                
+                # Extract start and end coordinates for this step
+                start_idx = way_points[0] if len(way_points) > 0 else 0
+                end_idx = way_points[1] if len(way_points) > 1 else start_idx
+                
+                start_coord = geometry[start_idx] if start_idx < len(geometry) else [0, 0]
+                end_coord = geometry[end_idx] if end_idx < len(geometry) else start_coord
+                
+                step_data = {
+                    'step_number': step_number,
+                    'instruction': clean_instruction_text(instruction),
+                    'distance': step_distance,
+                    'duration': step_duration,
+                    'distance_meters': distance_m,
+                    'duration_seconds': duration_s,
+                    'start_location': {
+                        'lat': start_coord[1],  # ORS uses [lng, lat]
+                        'lng': start_coord[0]
+                    },
+                    'end_location': {
+                        'lat': end_coord[1],    # ORS uses [lng, lat]
+                        'lng': end_coord[0]
+                    },
+                    'maneuver': step.get('type', 'straight'),
+                    'travel_mode': 'WALKING'
+                }
+                steps.append(step_data)
+                step_number += 1
         
         return {
             'success': True,
             'route': {
                 'distance': total_distance,
                 'duration': total_duration,
-                'distance_meters': leg['distance']['value'],
-                'duration_seconds': leg['duration']['value'],
+                'distance_meters': total_distance_m,
+                'duration_seconds': total_duration_s,
                 'steps': steps,
-                'start_address': leg['start_address'],
-                'end_address': leg['end_address'],
-                'overview_polyline': route.get('overview_polyline', {}).get('points', ''),
-                'bounds': route.get('bounds', {})
+                'start_address': 'Current Location',
+                'end_address': destination_name,
+                'overview_polyline': '',  # ORS has different polyline format
+                'bounds': {}
             }
         }
         
     except (KeyError, IndexError) as e:
-        logging.error(f"Error parsing directions data: {e}")
-        raise ValueError("Invalid directions data format")
+        logging.error(f"Error parsing ORS directions data: {e}")
+        raise ValueError("Invalid ORS directions data format")
 
-def clean_html_instruction(html_instruction):
-    """Remove HTML tags and clean up navigation instructions"""
-    # Remove HTML tags
-    clean_text = re.sub(r'<[^>]+>', '', html_instruction)
+def clean_instruction_text(instruction):
+    """Clean and optimize navigation instructions for voice"""
+    if not instruction:
+        return "Continue straight"
     
-    # Replace common HTML entities
-    clean_text = clean_text.replace('&nbsp;', ' ')
-    clean_text = clean_text.replace('&amp;', '&')
-    clean_text = clean_text.replace('&lt;', '<')
-    clean_text = clean_text.replace('&gt;', '>')
-    clean_text = clean_text.replace('&quot;', '"')
-    
-    # Clean up multiple spaces
-    clean_text = re.sub(r'\s+', ' ', clean_text)
+    # Clean up text
+    clean_text = instruction.strip()
     
     # Make instructions more voice-friendly
     clean_text = clean_text.replace('toward', 'towards')
     clean_text = clean_text.replace('Destination will be on the right', 'Your destination will be on the right')
     clean_text = clean_text.replace('Destination will be on the left', 'Your destination will be on the left')
+    clean_text = clean_text.replace('Continue on', 'Continue along')
     
-    return clean_text.strip()
+    return clean_text
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
