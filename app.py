@@ -195,6 +195,8 @@ def parse_directions(directions_data):
                 'instruction': clean_instruction,
                 'distance': step['distance']['text'],
                 'duration': step['duration']['text'],
+                'distance_meters': step['distance']['value'],
+                'duration_seconds': step['duration']['value'],
                 'start_location': {
                     'lat': step['start_location']['lat'],
                     'lng': step['start_location']['lng']
@@ -203,17 +205,25 @@ def parse_directions(directions_data):
                     'lat': step['end_location']['lat'],
                     'lng': step['end_location']['lng']
                 },
-                'maneuver': step.get('maneuver', 'straight')
+                'maneuver': step.get('maneuver', 'straight'),
+                'polyline': step.get('polyline', {}).get('points', ''),
+                'travel_mode': step.get('travel_mode', 'WALKING')
             }
             steps.append(step_data)
         
         return {
-            'status': 'OK',
-            'total_distance': total_distance,
-            'total_duration': total_duration,
-            'steps': steps,
-            'start_address': leg['start_address'],
-            'end_address': leg['end_address']
+            'success': True,
+            'route': {
+                'distance': total_distance,
+                'duration': total_duration,
+                'distance_meters': leg['distance']['value'],
+                'duration_seconds': leg['duration']['value'],
+                'steps': steps,
+                'start_address': leg['start_address'],
+                'end_address': leg['end_address'],
+                'overview_polyline': route.get('overview_polyline', {}).get('points', ''),
+                'bounds': route.get('bounds', {})
+            }
         }
         
     except (KeyError, IndexError) as e:

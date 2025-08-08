@@ -1,0 +1,64 @@
+Please fix and improve navigation so that it works like Google Maps walking mode with obstacle alerts, following these requirements:
+
+Voice Confirmation Before Navigation
+
+After speech recognition of destination, ask "Should I start navigation to {place}?"
+
+Wait for "Yes" or "No" (voice input). If No → cancel.
+
+Live Step Progression
+
+Use navigator.geolocation.watchPosition for continuous GPS tracking.
+
+When within 15 meters of the current step’s end location, automatically move to the next step and announce it via TTS.
+
+Keep announcing steps until destination is reached.
+
+Automatic Rerouting
+
+Detect if the user deviates more than 20 meters from the planned path.
+
+Automatically call Google Directions API again from current location to destination and restart step tracking.
+
+Integrate Object Detection During Navigation
+
+Keep camera active while navigating.
+
+If an obstacle is detected within close range (person, car, pole, etc.), announce "Obstacle ahead: [object]" without interrupting navigation guidance.
+
+Better Step Timing
+
+Adjust distance threshold so instructions trigger neither too early nor too late.
+
+Ensure “Next step” previews are given ~50 meters before a turn.
+
+Multi-Step Queue
+
+Maintain an internal queue of steps so the app always knows the upcoming step without waiting for new API calls.
+
+Permissions on Load
+
+On page load, request microphone, camera, and location permissions at once.
+
+If denied, show a clear on-screen + voice message with instructions to enable them.
+
+Navigation End Detection
+
+When final step is reached, announce "You have reached your destination" and stop tracking + object detection.
+
+Backend Requirements:
+
+Flask endpoint /directions calls Google Directions API and returns a clean JSON list of steps (instruction, distance, start/end lat/lng).
+
+Google API key stored securely in .env (GOOGLE_API_KEY).
+
+Frontend Requirements:
+
+Fully responsive, mobile-friendly design with high-contrast text for visually impaired users.
+
+Show current step + total steps on screen, update as steps progress.
+
+Comment all code for easy editing later.
+
+The final app must work on mobile browsers and laptops with smooth voice-driven navigation and obstacle detection alerts.
+
