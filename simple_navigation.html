@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlindMate - Voice Navigation</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .app-container {
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            color: #28a745;
+        }
+        
+        .main-button {
+            width: 250px;
+            height: 100px;
+            border-radius: 50px;
+            border: none;
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: white;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            box-shadow: 0 8px 30px rgba(40, 167, 69, 0.4);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin: 30px 0;
+        }
+        
+        .main-button:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(40, 167, 69, 0.6);
+        }
+        
+        .main-button.listening {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            animation: pulse 1.5s infinite;
+        }
+        
+        .main-button.navigating {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 8px 30px rgba(231, 76, 60, 0.4); }
+            50% { box-shadow: 0 8px 40px rgba(231, 76, 60, 0.8); }
+            100% { box-shadow: 0 8px 30px rgba(231, 76, 60, 0.4); }
+        }
+        
+        .status-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .status-text {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .instruction-text {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            line-height: 1.5;
+        }
+        
+        .navigation-info {
+            background: rgba(0, 123, 255, 0.2);
+            border: 2px solid #007bff;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .step-info {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+        
+        .distance-info {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        .emergency-stop {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #dc3545;
+            border: none;
+            color: white;
+            font-size: 2rem;
+            display: none;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(220, 53, 69, 0.5);
+        }
+        
+        .available-locations {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .location-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .location-chip {
+            background: rgba(40, 167, 69, 0.3);
+            border: 1px solid #28a745;
+            border-radius: 20px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            color: #28a745;
+        }
+        
+        @media (max-width: 768px) {
+            .main-button {
+                width: 200px;
+                height: 80px;
+                font-size: 1.5rem;
+            }
+            
+            .logo {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- App Logo -->
+        <div class="logo">
+            <i class="fas fa-eye"></i> BlindMate
+        </div>
+        
+        <!-- Status Card -->
+        <div class="status-card">
+            <div id="statusText" class="status-text">Initializing...</div>
+            <div id="instructionText" class="instruction-text">Please wait while we set up the navigation system</div>
+        </div>
+        
+        <!-- Main Navigation Button -->
+        <button id="mainButton" class="main-button">
+            <i class="fas fa-microphone"></i> Start Listening
+        </button>
+        
+        <!-- Navigation Info -->
+        <div id="navigationInfo" class="navigation-info">
+            <div id="currentStep" class="step-info"></div>
+            <div id="stepDistance" class="distance-info"></div>
+        </div>
+        
+        <!-- Available Locations -->
+        <div class="available-locations">
+            <h4><i class="fas fa-map-marker-alt"></i> Available Locations</h4>
+            <div class="location-grid">
+                <div class="location-chip">Library</div>
+                <div class="location-chip">Canteen</div>
+                <div class="location-chip">Stairs</div>
+                <div class="location-chip">Entrance</div>
+                <div class="location-chip">Bathroom</div>
+                <div class="location-chip">Office</div>
+            </div>
+            <p class="instruction-text mt-3">
+                Say "Go to [location]" or "Navigate to [place]"
+            </p>
+        </div>
+    </div>
+    
+    <!-- Emergency Stop Button -->
+    <button id="emergencyStop" class="emergency-stop">
+        <i class="fas fa-stop"></i>
+    </button>
+
+    <script>
+        /**
+         * Simplified BlindMate Navigation System
+         * Focus on voice navigation without camera dependencies
+         */
+        class SimpleBlindMate {
+            constructor() {
+                this.currentState = 'idle';
+                this.isNavigating = false;
+                this.currentRoute = null;
+                this.currentStepIndex = 0;
+                this.locationWatcher = null;
+                this.currentDestination = null;
+                this.recognition = null;
+                this.synthesis = window.speechSynthesis;
+                this.speechQueue = [];
+                
+                // Predefined locations
+                this.locations = {
+                    'library': { lat: 26.4011, lng: 80.3023, name: 'Library' },
+                    'stairs': { lat: 26.4004, lng: 80.3018, name: 'Stairs' },
+                    'canteen': { lat: 26.3995, lng: 80.2997, name: 'Canteen' },
+                    'entrance': { lat: 26.4015, lng: 80.3025, name: 'Main Entrance' },
+                    'bathroom': { lat: 26.4008, lng: 80.3015, name: 'Bathroom' },
+                    'office': { lat: 26.4012, lng: 80.3020, name: 'Office' }
+                };
+                
+                this.initElements();
+                this.init();
+            }
+            
+            initElements() {
+                this.elements = {
+                    mainButton: document.getElementById('mainButton'),
+                    statusText: document.getElementById('statusText'),
+                    instructionText: document.getElementById('instructionText'),
+                    navigationInfo: document.getElementById('navigationInfo'),
+                    currentStep: document.getElementById('currentStep'),
+                    stepDistance: document.getElementById('stepDistance'),
+                    emergencyStop: document.getElementById('emergencyStop')
+                };
+            }
+            
+            async init() {
+                console.log('Initializing BlindMate...');
+                
+                this.setupEventListeners();
+                this.initSpeechRecognition();
+                
+                this.updateStatus('Ready to Navigate', 'Press the button to start voice navigation');
+                this.speak('BlindMate voice navigation is ready. Press the button to start.');
+                
+                console.log('BlindMate initialized successfully');
+            }
+            
+            setupEventListeners() {
+                this.elements.mainButton.addEventListener('click', () => this.handleMainButtonClick());
+                this.elements.emergencyStop.addEventListener('click', () => this.emergencyStop());
+                
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space' && !this.isNavigating) {
+                        e.preventDefault();
+                        this.handleMainButtonClick();
+                    }
+                    if (e.key === 'Escape') {
+                        this.emergencyStop();
+                    }
+                });
+            }
+            
+            initSpeechRecognition() {
+                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                    this.speak('Speech recognition is not available in your browser.');
+                    return;
+                }
+                
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                this.recognition = new SpeechRecognition();
+                
+                this.recognition.continuous = false;
+                this.recognition.interimResults = false;
+                this.recognition.lang = 'en-US';
+                
+                this.recognition.onresult = (event) => {
+                    const command = event.results[0][0].transcript.toLowerCase().trim();
+                    console.log('Voice command:', command);
+                    this.processVoiceCommand(command);
+                };
+                
+                this.recognition.onend = () => {
+                    if (this.currentState === 'listening') {
+                        this.resetToIdle();
+                    }
+                };
+                
+                this.recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    this.speak('Sorry, I couldn\'t understand you. Please try again.');
+                    this.resetToIdle();
+                };
+            }
+            
+            handleMainButtonClick() {
+                switch (this.currentState) {
+                    case 'idle':
+                        this.startListening();
+                        break;
+                    case 'listening':
+                        this.stopListening();
+                        break;
+                    case 'navigating':
+                        this.speak('Navigation is active. Say stop navigation to end.');
+                        break;
+                    default:
+                        this.resetToIdle();
+                }
+            }
+            
+            startListening() {
+                if (!this.recognition) {
+                    this.speak('Speech recognition is not available.');
+                    return;
+                }
+                
+                this.currentState = 'listening';
+                this.updateButtonState();
+                this.updateStatus('Listening...', 'Say "Go to [place]" or "Navigate to [location]"');
+                this.speak('I\'m listening. Where would you like to go?');
+                
+                try {
+                    this.recognition.start();
+                } catch (error) {
+                    console.error('Speech recognition error:', error);
+                    this.resetToIdle();
+                }
+            }
+            
+            stopListening() {
+                if (this.recognition) {
+                    this.recognition.stop();
+                }
+                this.resetToIdle();
+            }
+            
+            processVoiceCommand(command) {
+                let destination = null;
+                
+                const patterns = [
+                    /(?:go to|navigate to|take me to|find)\s+(?:the\s+)?(.+)/i,
+                    /(.+)$/i
+                ];
+                
+                for (const pattern of patterns) {
+                    const match = command.match(pattern);
+                    if (match) {
+                        destination = match[1].trim();
+                        break;
+                    }
+                }
+                
+                if (destination) {
+                    this.confirmNavigation(destination);
+                } else {
+                    this.speak('I didn\'t understand. Please try saying "Go to library" or "Navigate to canteen".');
+                    this.resetToIdle();
+                }
+            }
+            
+            confirmNavigation(destination) {
+                const location = this.findLocation(destination);
+                
+                if (!location) {
+                    const available = Object.keys(this.locations).join(', ');
+                    this.speak(`I don't know where ${destination} is. Available locations are: ${available}`);
+                    this.resetToIdle();
+                    return;
+                }
+                
+                this.currentDestination = location;
+                this.currentState = 'confirming';
+                this.updateStatus('Confirm Navigation', `Navigate to ${location.name}?`);
+                
+                this.speak(`Should I start navigation to ${location.name}? Say yes to confirm or no to cancel.`);
+                
+                setTimeout(() => {
+                    if (this.currentState === 'confirming') {
+                        this.listenForConfirmation();
+                    }
+                }, 3000);
+            }
+            
+            listenForConfirmation() {
+                if (!this.recognition) return;
+                
+                const originalHandler = this.recognition.onresult;
+                
+                this.recognition.onresult = (event) => {
+                    const response = event.results[0][0].transcript.toLowerCase().trim();
+                    
+                    if (response.includes('yes') || response.includes('confirm')) {
+                        this.startNavigation();
+                    } else if (response.includes('no') || response.includes('cancel')) {
+                        this.speak('Navigation cancelled.');
+                        this.resetToIdle();
+                    } else {
+                        this.speak('Please say yes to confirm or no to cancel.');
+                        setTimeout(() => this.listenForConfirmation(), 1000);
+                    }
+                    
+                    this.recognition.onresult = originalHandler;
+                };
+                
+                try {
+                    this.recognition.start();
+                } catch (error) {
+                    console.error('Confirmation error:', error);
+                    this.resetToIdle();
+                }
+            }
+            
+            async startNavigation() {
+                try {
+                    this.currentState = 'navigating';
+                    this.isNavigating = true;
+                    this.updateButtonState();
+                    this.updateStatus('Getting Directions...', 'Please wait while we calculate your route');
+                    
+                    const currentLocation = await this.getCurrentLocation();
+                    const directions = await this.getDirections(currentLocation, this.currentDestination);
+                    
+                    if (directions && directions.status === 'OK') {
+                        this.currentRoute = directions;
+                        this.currentStepIndex = 0;
+                        
+                        this.speak(`Route found. ${directions.total_distance}, about ${directions.total_duration} walking. Starting navigation.`);
+                        
+                        this.startLiveNavigation();
+                    } else {
+                        throw new Error('Could not get directions');
+                    }
+                    
+                } catch (error) {
+                    console.error('Navigation error:', error);
+                    this.speak('Sorry, I couldn\'t get directions. Please try again.');
+                    this.resetToIdle();
+                }
+            }
+            
+            startLiveNavigation() {
+                this.elements.emergencyStop.style.display = 'block';
+                this.elements.navigationInfo.style.display = 'block';
+                
+                this.announceCurrentStep();
+                this.startPositionTracking();
+            }
+            
+            startPositionTracking() {
+                if (!navigator.geolocation) {
+                    this.speak('Location tracking is not available');
+                    return;
+                }
+                
+                this.locationWatcher = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const currentPos = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        this.checkNavigationProgress(currentPos);
+                    },
+                    (error) => {
+                        console.error('Position error:', error);
+                        this.speak('GPS tracking lost. Navigation may be less accurate.');
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 5000
+                    }
+                );
+            }
+            
+            checkNavigationProgress(currentPosition) {
+                if (!this.currentRoute || !this.isNavigating) return;
+                
+                const steps = this.currentRoute.steps;
+                if (this.currentStepIndex >= steps.length) {
+                    this.navigationComplete();
+                    return;
+                }
+                
+                const currentStep = steps[this.currentStepIndex];
+                const targetLocation = currentStep.end_location;
+                const distance = this.calculateDistance(currentPosition, targetLocation);
+                
+                if (distance < 20) {
+                    this.currentStepIndex++;
+                    
+                    if (this.currentStepIndex < steps.length) {
+                        this.announceCurrentStep();
+                    } else {
+                        this.navigationComplete();
+                    }
+                }
+            }
+            
+            announceCurrentStep() {
+                if (!this.currentRoute || this.currentStepIndex >= this.currentRoute.steps.length) return;
+                
+                const step = this.currentRoute.steps[this.currentStepIndex];
+                const stepNumber = this.currentStepIndex + 1;
+                const totalSteps = this.currentRoute.steps.length;
+                
+                this.elements.currentStep.textContent = `Step ${stepNumber}/${totalSteps}: ${step.instruction}`;
+                this.elements.stepDistance.textContent = `Distance: ${step.distance}`;
+                
+                this.updateStatus('Navigating', `Step ${stepNumber} of ${totalSteps}`);
+                this.speak(`Step ${stepNumber}. ${step.instruction}. Distance: ${step.distance}.`);
+            }
+            
+            navigationComplete() {
+                this.speak(`You have arrived at ${this.currentDestination.name}. Navigation complete.`);
+                this.updateStatus('Arrived', `Welcome to ${this.currentDestination.name}`);
+                this.stopNavigation();
+            }
+            
+            emergencyStop() {
+                this.speak('Navigation stopped.');
+                this.stopNavigation();
+                this.resetToIdle();
+            }
+            
+            stopNavigation() {
+                this.isNavigating = false;
+                this.currentRoute = null;
+                this.currentStepIndex = 0;
+                this.currentDestination = null;
+                
+                if (this.locationWatcher) {
+                    navigator.geolocation.clearWatch(this.locationWatcher);
+                    this.locationWatcher = null;
+                }
+                
+                this.elements.emergencyStop.style.display = 'none';
+                this.elements.navigationInfo.style.display = 'none';
+            }
+            
+            resetToIdle() {
+                this.currentState = 'idle';
+                this.updateButtonState();
+                this.updateStatus('Ready to Navigate', 'Press the button to start voice navigation');
+            }
+            
+            updateButtonState() {
+                const button = this.elements.mainButton;
+                button.className = 'main-button';
+                
+                switch (this.currentState) {
+                    case 'listening':
+                        button.classList.add('listening');
+                        button.innerHTML = '<i class="fas fa-stop"></i> Stop Listening';
+                        break;
+                    case 'navigating':
+                        button.classList.add('navigating');
+                        button.innerHTML = '<i class="fas fa-route"></i> Navigating...';
+                        break;
+                    default:
+                        button.innerHTML = '<i class="fas fa-microphone"></i> Start Listening';
+                }
+            }
+            
+            updateStatus(mainText, subText) {
+                this.elements.statusText.textContent = mainText;
+                this.elements.instructionText.textContent = subText;
+            }
+            
+            speak(text, priority = false) {
+                if (priority) {
+                    this.synthesis.cancel();
+                    this.speechQueue = [];
+                }
+                
+                if (this.synthesis.speaking && !priority) {
+                    this.speechQueue.push(text);
+                    return;
+                }
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 0.9;
+                utterance.pitch = 1;
+                utterance.volume = 0.8;
+                
+                utterance.onend = () => {
+                    if (this.speechQueue.length > 0) {
+                        const nextText = this.speechQueue.shift();
+                        setTimeout(() => this.speak(nextText), 500);
+                    }
+                };
+                
+                this.synthesis.speak(utterance);
+            }
+            
+            getCurrentLocation() {
+                return new Promise((resolve, reject) => {
+                    if (!navigator.geolocation) {
+                        reject(new Error('Geolocation not supported'));
+                        return;
+                    }
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            resolve({
+                                lat: position.coords.latitude,
+                                lng: position.coords.longitude
+                            });
+                        },
+                        (error) => {
+                            this.speak('Location access failed. Please enable GPS.');
+                            reject(error);
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 60000
+                        }
+                    );
+                });
+            }
+            
+            async getDirections(origin, destination) {
+                try {
+                    const response = await fetch('/api/directions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            origin: `${origin.lat},${origin.lng}`,
+                            destination: `${destination.lat},${destination.lng}`,
+                            mode: 'walking'
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    return await response.json();
+                    
+                } catch (error) {
+                    console.error('Directions API error:', error);
+                    throw error;
+                }
+            }
+            
+            findLocation(name) {
+                const searchName = name.toLowerCase().trim();
+                
+                if (this.locations[searchName]) {
+                    return this.locations[searchName];
+                }
+                
+                for (const [key, location] of Object.entries(this.locations)) {
+                    if (key.includes(searchName) || 
+                        searchName.includes(key) || 
+                        location.name.toLowerCase().includes(searchName)) {
+                        return location;
+                    }
+                }
+                
+                return null;
+            }
+            
+            calculateDistance(pos1, pos2) {
+                const R = 6371e3;
+                const φ1 = pos1.lat * Math.PI / 180;
+                const φ2 = pos2.lat * Math.PI / 180;
+                const Δφ = (pos2.lat - pos1.lat) * Math.PI / 180;
+                const Δλ = (pos2.lng - pos1.lng) * Math.PI / 180;
+
+                const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                        Math.sin(Δλ/2) * Math.sin(Δλ/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+                return R * c;
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.blindMate = new SimpleBlindMate();
+        });
+    </script>
+</body>
+</html>

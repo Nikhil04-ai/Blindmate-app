@@ -1,5 +1,7 @@
 import os
 import logging
+import requests
+import re
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 from gemini_service import GeminiService
@@ -27,11 +29,23 @@ gemini_service = GeminiService()
 def index():
     """Serve the main application page"""
     try:
-        with open('index.html', 'r', encoding='utf-8') as f:
+        with open('simple_navigation.html', 'r', encoding='utf-8') as f:
             html_content = f.read()
         return html_content
     except FileNotFoundError:
-        return "Application files not found", 404
+        # Fallback to navigation.html
+        try:
+            with open('navigation.html', 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            return html_content
+        except FileNotFoundError:
+            # Final fallback to old index.html
+            try:
+                with open('index.html', 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                return html_content
+            except FileNotFoundError:
+                return "Application files not found", 404
 
 @app.route('/styles.css')
 def styles():
@@ -52,6 +66,26 @@ def app_js():
         return js_content, 200, {'Content-Type': 'application/javascript'}
     except FileNotFoundError:
         return "JavaScript file not found", 404
+
+@app.route('/navigation.js')
+def navigation_js():
+    """Serve new navigation JavaScript file"""
+    try:
+        with open('navigation.js', 'r', encoding='utf-8') as f:
+            js_content = f.read()
+        return js_content, 200, {'Content-Type': 'application/javascript'}
+    except FileNotFoundError:
+        return "Navigation JavaScript file not found", 404
+
+@app.route('/sw.js')
+def service_worker():
+    """Serve service worker for PWA capabilities"""
+    try:
+        with open('sw.js', 'r', encoding='utf-8') as f:
+            sw_content = f.read()
+        return sw_content, 200, {'Content-Type': 'application/javascript'}
+    except FileNotFoundError:
+        return "Service worker not found", 404
 
 @app.route('/api/process-command', methods=['POST'])
 def process_command():
@@ -78,53 +112,127 @@ def process_command():
 
 @app.route('/api/directions', methods=['POST'])
 def get_directions():
-    """Proxy endpoint for Google Maps Directions API to keep API key secure"""
+    """Get walking directions from Google Directions API"""
     try:
         data = request.get_json()
         
         if not data or 'origin' not in data or 'destination' not in data:
-            return jsonify({'error': 'Origin and destination required'}), 400
+            return jsonify({'error': 'Missing origin or destination'}), 400
         
         origin = data['origin']
         destination = data['destination']
         mode = data.get('mode', 'walking')
         
-        logging.info(f"Getting directions from {origin} to {destination}")
+        # Get Google API key from environment
+        api_key = os.environ.get('GOOGLE_API_KEY')
+        if not api_key:
+            logging.error("GOOGLE_API_KEY not found in environment variables")
+            return jsonify({'error': 'Google API key not configured'}), 500
         
-        # Mock response for demonstration - replace with real Google Maps API
-        mock_response = {
-            "status": "OK",
-            "routes": [{
-                "legs": [{
-                    "distance": {"text": "150 meters", "value": 150},
-                    "duration": {"text": "2 minutes", "value": 120},
-                    "steps": [
-                        {
-                            "distance": {"text": "50 meters", "value": 50},
-                            "duration": {"text": "1 minute", "value": 60}, 
-                            "html_instructions": "Walk straight for 50 meters",
-                            "start_location": {"lat": 26.4011, "lng": 80.3023},
-                            "end_location": {"lat": 26.4008, "lng": 80.3020}
-                        },
-                        {
-                            "distance": {"text": "100 meters", "value": 100},
-                            "duration": {"text": "1 minute", "value": 60},
-                            "html_instructions": "Turn left and walk 100 meters to your destination",
-                            "start_location": {"lat": 26.4008, "lng": 80.3020},
-                            "end_location": {"lat": 26.3995, "lng": 80.2997}
-                        }
-                    ],
-                    "start_location": {"lat": 26.4011, "lng": 80.3023},
-                    "end_location": {"lat": 26.3995, "lng": 80.2997}
-                }]
-            }]
+        # Call Google Directions API
+        url = 'https://maps.googleapis.com/maps/api/directions/json'
+        params = {
+            'origin': origin,
+            'destination': destination,
+            'mode': mode,
+            'key': api_key,
+            'units': 'metric',
+            'language': 'en'
         }
         
-        return jsonify(mock_response)
+        logging.info(f"Getting directions from {origin} to {destination}")
         
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        directions_data = response.json()
+        
+        if directions_data['status'] != 'OK':
+            error_msg = directions_data.get('error_message', 'Directions request failed')
+            logging.error(f"Google Directions API error: {directions_data['status']} - {error_msg}")
+            return jsonify({'error': f'Directions API error: {directions_data["status"]}'}), 400
+        
+        # Parse and clean the directions
+        cleaned_directions = parse_directions(directions_data)
+        
+        logging.info(f"Successfully got directions with {len(cleaned_directions.get('steps', []))} steps")
+        
+        return jsonify(cleaned_directions)
+        
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error getting directions: {e}")
+        return jsonify({'error': 'Failed to connect to Google Directions API'}), 500
     except Exception as e:
-        logging.error(f"Error in directions endpoint: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error getting directions: {e}")
+        return jsonify({'error': 'Directions request failed'}), 500
+
+def parse_directions(directions_data):
+    """Parse Google Directions response and clean HTML from instructions"""
+    try:
+        route = directions_data['routes'][0]
+        leg = route['legs'][0]
+        
+        # Extract overall route info
+        total_distance = leg['distance']['text']
+        total_duration = leg['duration']['text']
+        
+        # Parse each step and clean HTML
+        steps = []
+        for i, step in enumerate(leg['steps']):
+            # Clean HTML from instructions
+            clean_instruction = clean_html_instruction(step['html_instructions'])
+            
+            step_data = {
+                'step_number': i + 1,
+                'instruction': clean_instruction,
+                'distance': step['distance']['text'],
+                'duration': step['duration']['text'],
+                'start_location': {
+                    'lat': step['start_location']['lat'],
+                    'lng': step['start_location']['lng']
+                },
+                'end_location': {
+                    'lat': step['end_location']['lat'],
+                    'lng': step['end_location']['lng']
+                },
+                'maneuver': step.get('maneuver', 'straight')
+            }
+            steps.append(step_data)
+        
+        return {
+            'status': 'OK',
+            'total_distance': total_distance,
+            'total_duration': total_duration,
+            'steps': steps,
+            'start_address': leg['start_address'],
+            'end_address': leg['end_address']
+        }
+        
+    except (KeyError, IndexError) as e:
+        logging.error(f"Error parsing directions data: {e}")
+        raise ValueError("Invalid directions data format")
+
+def clean_html_instruction(html_instruction):
+    """Remove HTML tags and clean up navigation instructions"""
+    # Remove HTML tags
+    clean_text = re.sub(r'<[^>]+>', '', html_instruction)
+    
+    # Replace common HTML entities
+    clean_text = clean_text.replace('&nbsp;', ' ')
+    clean_text = clean_text.replace('&amp;', '&')
+    clean_text = clean_text.replace('&lt;', '<')
+    clean_text = clean_text.replace('&gt;', '>')
+    clean_text = clean_text.replace('&quot;', '"')
+    
+    # Clean up multiple spaces
+    clean_text = re.sub(r'\s+', ' ', clean_text)
+    
+    # Make instructions more voice-friendly
+    clean_text = clean_text.replace('toward', 'towards')
+    clean_text = clean_text.replace('Destination will be on the right', 'Your destination will be on the right')
+    clean_text = clean_text.replace('Destination will be on the left', 'Your destination will be on the left')
+    
+    return clean_text.strip()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
