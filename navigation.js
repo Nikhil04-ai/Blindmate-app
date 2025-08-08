@@ -70,8 +70,14 @@ class BlindMateNavigation {
         // Setup speech recognition for navigation commands
         this.setupSpeechRecognition();
         
+        // Setup UI event listeners
+        this.setupUIEventListeners();
+        
         // Request all permissions on page load as required
         await this.requestAllPermissions();
+        
+        // Initialize camera feed for object detection
+        await this.initializeCamera();
         
         // Load object detection model
         await this.loadModel();
@@ -164,6 +170,7 @@ class BlindMateNavigation {
         // Update status based on permissions
         if (results.camera && results.microphone && results.location) {
             this.speak('All permissions granted. Navigation system ready.', 'normal');
+            this.updateStatusDisplay('Ready to Navigate', 'Press the button or Volume Up key to start');
         }
     }
     
@@ -197,6 +204,17 @@ class BlindMateNavigation {
         
         this.recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
+            this.currentState = 'idle';
+            this.updateMainButton('idle');
+            this.updateStatusDisplay('Recognition Error', 'Please try again');
+        };
+        
+        this.recognition.onend = () => {
+            if (this.currentState === 'listening') {
+                this.currentState = 'idle';
+                this.updateMainButton('idle');
+                this.updateStatusDisplay('Ready to Navigate', 'Press the button to start');
+            }
         };
         
         // Separate recognition for confirmations
@@ -209,6 +227,172 @@ class BlindMateNavigation {
             const transcript = event.results[0][0].transcript.toLowerCase().trim();
             this.handleConfirmationResponse(transcript);
         };
+        
+        this.confirmationRecognition.onerror = (event) => {
+            console.error('Confirmation speech recognition error:', event.error);
+        };
+    }
+    
+    /**
+     * Setup UI event listeners for buttons and keyboard shortcuts
+     */
+    setupUIEventListeners() {
+        // Main navigation button
+        const mainButton = document.getElementById('mainButton');
+        if (mainButton) {
+            mainButton.addEventListener('click', () => this.handleMainButtonClick());
+        }
+        
+        // Emergency stop button
+        const emergencyStop = document.getElementById('emergencyStop');
+        if (emergencyStop) {
+            emergencyStop.addEventListener('click', () => this.stopNavigation());
+        }
+        
+        // Volume Up key shortcut
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'AudioVolumeUp' || (event.ctrlKey && event.key === ' ')) {
+                event.preventDefault();
+                this.handleMainButtonClick();
+            }
+        });
+        
+        console.log('UI event listeners setup complete');
+    }
+    
+    /**
+     * Handle main button clicks - starts voice recognition or stops navigation
+     */
+    handleMainButtonClick() {
+        if (this.isNavigating) {
+            this.stopNavigation();
+        } else if (this.currentState === 'idle') {
+            this.startVoiceRecognition();
+        }
+    }
+    
+    /**
+     * Start voice recognition for navigation commands
+     */
+    startVoiceRecognition() {
+        if (!this.permissions.microphone) {
+            this.speak('Microphone permission required. Please enable microphone access.', 'high');
+            return;
+        }
+        
+        this.currentState = 'listening';
+        this.updateStatusDisplay('Listening...', 'Say your destination, for example: "Go to Central Park"');
+        this.updateMainButton('listening');
+        
+        try {
+            this.recognition.start();
+        } catch (error) {
+            console.error('Speech recognition start error:', error);
+            this.speak('Unable to start voice recognition. Please try again.', 'high');
+            this.currentState = 'idle';
+            this.updateMainButton('idle');
+        }
+    }
+    
+    /**
+     * Initialize camera feed for object detection
+     */
+    async initializeCamera() {
+        if (!this.permissions.camera) {
+            console.log('Camera permission not available');
+            return;
+        }
+        
+        try {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('canvas');
+            
+            if (!video || !canvas) {
+                console.error('Video or canvas element not found');
+                return;
+            }
+            
+            this.detectionCanvas = canvas;
+            this.detectionContext = canvas.getContext('2d');
+            
+            // Get camera stream
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'environment'
+                }
+            });
+            
+            video.srcObject = stream;
+            
+            // Wait for video to load
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    // Set canvas size to match video
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    resolve();
+                };
+            });
+            
+            console.log('Camera initialized successfully');
+            
+        } catch (error) {
+            console.error('Camera initialization error:', error);
+            this.speak('Unable to access camera. Object detection disabled.', 'normal');
+        }
+    }
+    
+    /**
+     * Update status display in the UI
+     */
+    updateStatusDisplay(statusText, instructionText) {
+        const statusElement = document.getElementById('statusText');
+        const instructionElement = document.getElementById('instructionText');
+        
+        if (statusElement) {
+            statusElement.textContent = statusText;
+        }
+        
+        if (instructionElement) {
+            instructionElement.textContent = instructionText;
+        }
+    }
+    
+    /**
+     * Update main button appearance based on current state
+     */
+    updateMainButton(state) {
+        const button = document.getElementById('mainButton');
+        if (!button) return;
+        
+        // Remove all state classes
+        button.classList.remove('listening', 'navigating');
+        
+        switch (state) {
+            case 'listening':
+                button.classList.add('listening');
+                button.innerHTML = '<i class="fas fa-microphone"></i> Listening...';
+                break;
+            case 'navigating':
+                button.classList.add('navigating');
+                button.innerHTML = '<i class="fas fa-stop"></i> Stop Navigation';
+                // Show emergency stop button
+                const emergencyStop = document.getElementById('emergencyStop');
+                if (emergencyStop) {
+                    emergencyStop.style.display = 'block';
+                }
+                break;
+            default: // idle
+                button.innerHTML = '<i class="fas fa-microphone"></i> Start Listening';
+                // Hide emergency stop button
+                const emergencyStopIdle = document.getElementById('emergencyStop');
+                if (emergencyStopIdle) {
+                    emergencyStopIdle.style.display = 'none';
+                }
+                break;
+        }
     }
     
     /**
@@ -360,6 +544,9 @@ class BlindMateNavigation {
             
             // Initialize navigation UI
             this.initializeNavigationUI();
+            
+            // Update main button to show navigation state
+            this.updateMainButton('navigating');
             
             // Announce first step
             const firstStep = this.currentRoute.steps[0];
@@ -559,6 +746,9 @@ class BlindMateNavigation {
             
             this.updateNavigationUI();
             
+            // Update status display
+            this.updateStatusDisplay('Navigation Updated', 'New route calculated, continuing...');
+            
             console.log('Rerouting successful');
             
         } catch (error) {
@@ -625,13 +815,33 @@ class BlindMateNavigation {
         // Update UI
         this.updateNavigationUI();
         
+        // Reset main button to idle state
+        this.updateMainButton('idle');
+        
         console.log('Navigation stopped');
+        
+        // Update UI to show navigation stopped
+        this.updateStatusDisplay('Navigation Stopped', 'Press the button to start new navigation');
     }
     
     /**
      * Initialize navigation UI - shows current step and total steps
      */
     initializeNavigationUI() {
+        // Show navigation info overlay
+        const navInfo = document.getElementById('navigationInfo');
+        if (navInfo) {
+            navInfo.style.display = 'block';
+        }
+        
+        // Show detection overlay and enable object detection during navigation
+        const detectionOverlay = document.getElementById('detectionOverlay');
+        if (detectionOverlay) {
+            detectionOverlay.style.display = 'block';
+        }
+        
+        // Enable obstacle detection during navigation
+        this.obstacleDetectionEnabled = true;
         let navContainer = document.getElementById('navigationContainer');
         if (!navContainer) {
             navContainer = document.createElement('div');
@@ -652,6 +862,45 @@ class BlindMateNavigation {
      * Update navigation UI with current step information - HIGH CONTRAST for accessibility
      */
     updateNavigationUI() {
+        if (!this.currentRoute || !this.isNavigating) {
+            // Hide navigation info when not navigating
+            const navInfo = document.getElementById('navigationInfo');
+            if (navInfo) {
+                navInfo.style.display = 'none';
+            }
+            
+            // Hide detection overlay when not navigating
+            const detectionOverlay = document.getElementById('detectionOverlay');
+            if (detectionOverlay) {
+                detectionOverlay.style.display = 'none';
+            }
+            
+            // Disable obstacle detection
+            this.obstacleDetectionEnabled = false;
+            return;
+        }
+        
+        const currentStepElement = document.getElementById('currentStep');
+        const stepDistanceElement = document.getElementById('stepDistance');
+        
+        if (this.currentStepIndex < this.currentRoute.steps.length) {
+            const currentStep = this.currentRoute.steps[this.currentStepIndex];
+            const totalSteps = this.currentRoute.steps.length;
+            
+            if (currentStepElement) {
+                currentStepElement.innerHTML = `
+                    <strong>Step ${this.currentStepIndex + 1} of ${totalSteps}</strong><br>
+                    ${currentStep.instruction}
+                `;
+            }
+            
+            if (stepDistanceElement) {
+                stepDistanceElement.innerHTML = `
+                    <i class="fas fa-route"></i> ${currentStep.distance} • 
+                    <i class="fas fa-clock"></i> ${currentStep.duration}
+                `;
+            }
+        }
         const navContainer = document.getElementById('navigationContainer');
         if (!navContainer) return;
         
