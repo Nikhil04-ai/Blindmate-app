@@ -125,6 +125,176 @@ header h1 {
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* Enhanced Navigation Styles */
+.navigation-display {
+    position: sticky;
+    top: 20px;
+    z-index: 100;
+}
+
+.navigation-display .card {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    border: 2px solid var(--bs-primary);
+}
+
+.navigation-display .card-header {
+    font-weight: 600;
+    background: linear-gradient(45deg, var(--bs-primary), var(--bs-info));
+}
+
+.navigation-display .progress {
+    background-color: rgba(255, 255, 255, 0.2);
+    height: 8px;
+}
+
+.navigation-display .progress-bar {
+    background: linear-gradient(90deg, var(--bs-success), var(--bs-info));
+    transition: width 0.3s ease;
+}
+
+/* Mobile-specific navigation styles */
+@media (max-width: 768px) {
+    .navigation-display {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        top: auto;
+        z-index: 1050;
+        margin: 10px;
+        border-radius: 15px 15px 0 0;
+    }
+    
+    .navigation-display .card {
+        margin: 0;
+        border-radius: 15px 15px 0 0;
+    }
+    
+    /* Ensure main content doesn't hide behind fixed navigation */
+    body.navigation-active {
+        padding-bottom: 220px;
+    }
+    
+    /* Larger touch targets on mobile */
+    .btn-lg {
+        min-height: 70px;
+        font-size: 1.3rem;
+    }
+}
+
+/* Emergency stop button styling */
+#emergencyStop {
+    background: linear-gradient(45deg, var(--bs-danger), #a71e2a);
+    border: 2px solid var(--bs-danger);
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+    color: white;
+}
+
+#emergencyStop:hover {
+    background: linear-gradient(45deg, #a71e2a, #7a1719);
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+    transform: translateY(-1px);
+}
+
+/* Enhanced detection indicator */
+.detection-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    animation: pulse-detection 2s infinite;
+    border: 2px solid var(--bs-success);
+}
+
+@keyframes pulse-detection {
+    0% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* Voice feedback visual indicators */
+.voice-listening {
+    background: linear-gradient(45deg, var(--bs-warning), #e0a800);
+    animation: listening-pulse 1.5s ease-in-out infinite;
+    border-color: var(--bs-warning);
+}
+
+@keyframes listening-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+    50% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+}
+
+.voice-speaking {
+    background: linear-gradient(45deg, var(--bs-info), #138496);
+    animation: speaking-wave 0.8s ease-in-out infinite;
+    border-color: var(--bs-info);
+}
+
+@keyframes speaking-wave {
+    0%, 100% { opacity: 1; }
+    25% { opacity: 0.9; }
+    50% { opacity: 0.8; }
+    75% { opacity: 0.9; }
+}
+
+/* Navigation step indicators */
+#currentInstruction {
+    font-size: 1.1rem;
+    line-height: 1.4;
+    color: var(--bs-dark);
+}
+
+#stepDistance {
+    color: var(--bs-primary);
+    font-weight: 700;
+}
+
+/* High contrast mode for better accessibility */
+@media (prefers-contrast: high) {
+    .card {
+        border: 3px solid #000000;
+        background: #ffffff;
+        color: #000000;
+    }
+    
+    .btn {
+        border: 3px solid;
+        font-weight: bold;
+    }
+    
+    .badge {
+        border: 2px solid #000000;
+        color: #000000;
+    }
+    
+    .navigation-display .card-header {
+        background: #000000;
+        color: #ffffff;
+    }
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    
+    .btn-lg:hover {
+        transform: none;
+    }
+}
+
 /* Responsive video container */
 @media (max-width: 992px) {
     .card-body {
