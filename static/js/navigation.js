@@ -31,6 +31,10 @@ class UniversalNavigation {
             voicePreviewDistance: 50, // meters - when to announce "in X meters"
             repeatInstructionDistance: 25, // meters - repeat instructions if user hasn't moved
             urgentAnnouncementDistance: 10, // meters - for urgent turn warnings
+            // Obstacle alert configuration
+            obstacleDetectionFrequency: 1000, // ms - how often to check for obstacles
+            obstacleAlertDistance: 'close', // close, medium, far
+            obstacleMinConfidence: 0.5 // minimum confidence to trigger alert
         };
         
         // Google Maps integration
@@ -56,6 +60,20 @@ class UniversalNavigation {
         this.detectionCanvas = null;
         this.detectionContext = null;
         this.camera = null;
+        
+        // Real-time Obstacle Alert System
+        this.obstacleAlertEnabled = true;
+        this.lastObstacleAlert = 0;
+        this.obstacleAlertCooldown = 3000; // 3 seconds between alerts
+        this.obstacleDetectionInterval = null;
+        this.criticalObstacles = ['person', 'car', 'truck', 'bus', 'bicycle', 'motorcycle'];
+        this.warningObstacles = ['chair', 'dining table', 'potted plant', 'bench', 'fire hydrant'];
+        this.detectedObstacles = new Map(); // Track obstacle persistence
+        this.obstacleThresholds = {
+            critical: 0.6, // High confidence threshold for critical obstacles
+            warning: 0.5,  // Medium confidence for warning obstacles
+            minSize: 0.1   // Minimum size (% of screen) to trigger alert
+        };
         
         // Enhanced permissions and error handling
         this.permissions = {
@@ -503,6 +521,13 @@ class UniversalNavigation {
             });
         }
         
+        const toggleObstacleBtn = document.getElementById('toggleObstacleAlerts');
+        if (toggleObstacleBtn) {
+            toggleObstacleBtn.addEventListener('click', () => {
+                this.toggleObstacleAlerts();
+            });
+        }
+        
         // Accessibility: Allow Enter key to activate main button
         if (mainBtn) {
             mainBtn.addEventListener('keydown', (event) => {
@@ -683,6 +708,9 @@ class UniversalNavigation {
             
             // Start intelligent GPS tracking with battery optimization
             this.startContinuousGPSTracking();
+            
+            // Start real-time obstacle alert system
+            this.startObstacleAlertSystem();
             
             // Display route on map if available
             if (this.map && this.directionsRenderer) {
@@ -1351,8 +1379,8 @@ class UniversalNavigation {
             this.watchId = null;
         }
         
-        // Stop obstacle detection
-        this.isDetecting = false;
+        // Stop obstacle detection and alert system
+        this.stopObstacleAlertSystem();
         
         // Hide navigation UI elements
         const navigationInfo = document.getElementById('navigationInfo');
@@ -1746,6 +1774,307 @@ class UniversalNavigation {
                 this.speak('Failed to start voice recognition test. Please try again.', true);
             }
         }, 2000);
+    }
+    
+    /**
+     * Start Real-time Obstacle Alert System
+     */
+    startObstacleAlertSystem() {
+        console.log('Starting real-time obstacle alert system');
+        
+        if (!this.model) {
+            console.warn('COCO-SSD model not loaded, obstacle alerts disabled');
+            return;
+        }
+        
+        if (!this.camera) {
+            console.warn('Camera not available, obstacle alerts disabled');
+            return;
+        }
+        
+        this.obstacleAlertEnabled = true;
+        this.isDetecting = true;
+        
+        // Start obstacle detection at configured frequency
+        this.obstacleDetectionInterval = setInterval(() => {
+            if (this.isNavigating && this.obstacleAlertEnabled) {
+                this.detectObstacles();
+            }
+        }, this.config.obstacleDetectionFrequency);
+        
+        this.speakWithPriority('Obstacle alert system activated', 'medium');
+        console.log('Obstacle alert system started');
+    }
+    
+    /**
+     * Stop Real-time Obstacle Alert System
+     */
+    stopObstacleAlertSystem() {
+        console.log('Stopping obstacle alert system');
+        
+        this.obstacleAlertEnabled = false;
+        this.isDetecting = false;
+        
+        if (this.obstacleDetectionInterval) {
+            clearInterval(this.obstacleDetectionInterval);
+            this.obstacleDetectionInterval = null;
+        }
+        
+        // Clear detected obstacles
+        this.detectedObstacles.clear();
+        
+        console.log('Obstacle alert system stopped');
+    }
+    
+    /**
+     * Detect obstacles using COCO-SSD model
+     */
+    async detectObstacles() {
+        if (!this.model || !this.camera || !this.isNavigating) {
+            return;
+        }
+        
+        try {
+            // Get video element for detection
+            const video = this.camera;
+            if (video.readyState !== 4) return; // Video not ready
+            
+            // Run object detection
+            const predictions = await this.model.detect(video);
+            
+            // Process predictions for obstacle alerts
+            this.processObstacleDetections(predictions);
+            
+        } catch (error) {
+            console.error('Obstacle detection error:', error);
+        }
+    }
+    
+    /**
+     * Process obstacle detections and trigger alerts
+     */
+    processObstacleDetections(predictions) {
+        const now = Date.now();
+        const currentObstacles = new Map();
+        
+        // Analyze each prediction
+        for (const prediction of predictions) {
+            const { class: className, score, bbox } = prediction;
+            const [x, y, width, height] = bbox;
+            
+            // Calculate obstacle size relative to screen
+            const obstacleSize = (width * height) / (this.camera.videoWidth * this.camera.videoHeight);
+            
+            // Skip small objects
+            if (obstacleSize < this.obstacleThresholds.minSize) continue;
+            
+            // Determine obstacle priority and threshold
+            let priority = 'none';
+            let threshold = 1.0;
+            
+            if (this.criticalObstacles.includes(className)) {
+                priority = 'critical';
+                threshold = this.obstacleThresholds.critical;
+            } else if (this.warningObstacles.includes(className)) {
+                priority = 'warning';
+                threshold = this.obstacleThresholds.warning;
+            }
+            
+            // Check if obstacle meets confidence threshold
+            if (score >= threshold && priority !== 'none') {
+                const obstacleKey = `${className}_${Math.round(x)}_${Math.round(y)}`;
+                
+                currentObstacles.set(obstacleKey, {
+                    className,
+                    score,
+                    bbox,
+                    priority,
+                    size: obstacleSize,
+                    position: this.determineObstaclePosition(x, width),
+                    distance: this.estimateObstacleDistance(width, height, className)
+                });
+            }
+        }
+        
+        // Update persistent obstacle tracking
+        this.updateObstacleTracking(currentObstacles);
+        
+        // Generate alerts for persistent obstacles
+        this.generateObstacleAlerts(currentObstacles);
+    }
+    
+    /**
+     * Determine obstacle position relative to user (left, center, right)
+     */
+    determineObstaclePosition(x, width) {
+        const centerX = x + width / 2;
+        const screenWidth = this.camera.videoWidth;
+        const leftThird = screenWidth / 3;
+        const rightThird = (screenWidth * 2) / 3;
+        
+        if (centerX < leftThird) return 'left';
+        if (centerX > rightThird) return 'right';
+        return 'center';
+    }
+    
+    /**
+     * Estimate obstacle distance based on size and type
+     */
+    estimateObstacleDistance(width, height, className) {
+        const objectSize = width * height;
+        const screenSize = this.camera.videoWidth * this.camera.videoHeight;
+        const sizeRatio = objectSize / screenSize;
+        
+        // Simple distance estimation based on object size
+        if (sizeRatio > 0.4) return 'very close';
+        if (sizeRatio > 0.2) return 'close';
+        if (sizeRatio > 0.1) return 'medium';
+        return 'far';
+    }
+    
+    /**
+     * Update obstacle tracking for persistence
+     */
+    updateObstacleTracking(currentObstacles) {
+        const now = Date.now();
+        
+        // Add new obstacles or update existing ones
+        for (const [key, obstacle] of currentObstacles) {
+            if (this.detectedObstacles.has(key)) {
+                // Update existing obstacle
+                const existing = this.detectedObstacles.get(key);
+                existing.lastSeen = now;
+                existing.detectionCount++;
+                existing.score = Math.max(existing.score, obstacle.score);
+            } else {
+                // Add new obstacle
+                this.detectedObstacles.set(key, {
+                    ...obstacle,
+                    firstSeen: now,
+                    lastSeen: now,
+                    detectionCount: 1,
+                    alertGiven: false
+                });
+            }
+        }
+        
+        // Remove old obstacles (not seen for 2 seconds)
+        for (const [key, obstacle] of this.detectedObstacles) {
+            if (now - obstacle.lastSeen > 2000) {
+                this.detectedObstacles.delete(key);
+            }
+        }
+    }
+    
+    /**
+     * Generate audio alerts for detected obstacles
+     */
+    generateObstacleAlerts(currentObstacles) {
+        const now = Date.now();
+        
+        // Check cooldown period
+        if (now - this.lastObstacleAlert < this.obstacleAlertCooldown) {
+            return;
+        }
+        
+        // Find the most urgent obstacle to alert about
+        let mostUrgentObstacle = null;
+        let highestPriority = 0;
+        
+        for (const [key, obstacle] of this.detectedObstacles) {
+            // Only alert about persistent obstacles (seen multiple times)
+            if (obstacle.detectionCount < 2 || obstacle.alertGiven) continue;
+            
+            let priorityScore = 0;
+            if (obstacle.priority === 'critical') priorityScore = 10;
+            if (obstacle.priority === 'warning') priorityScore = 5;
+            
+            // Add urgency based on distance
+            if (obstacle.distance === 'very close') priorityScore += 5;
+            if (obstacle.distance === 'close') priorityScore += 3;
+            if (obstacle.distance === 'medium') priorityScore += 1;
+            
+            if (priorityScore > highestPriority) {
+                highestPriority = priorityScore;
+                mostUrgentObstacle = obstacle;
+            }
+        }
+        
+        // Generate alert for most urgent obstacle
+        if (mostUrgentObstacle) {
+            this.announceObstacle(mostUrgentObstacle);
+            mostUrgentObstacle.alertGiven = true;
+            this.lastObstacleAlert = now;
+        }
+    }
+    
+    /**
+     * Announce detected obstacle with appropriate urgency
+     */
+    announceObstacle(obstacle) {
+        let alertMessage = '';
+        let speechPriority = 'medium';
+        
+        // Determine speech priority
+        if (obstacle.priority === 'critical' && obstacle.distance === 'very close') {
+            speechPriority = 'high';
+        } else if (obstacle.priority === 'critical') {
+            speechPriority = 'medium';
+        }
+        
+        // Create natural alert message
+        const directionText = obstacle.position === 'center' ? 'ahead' : `on your ${obstacle.position}`;
+        const distanceText = obstacle.distance === 'very close' ? 'very close' : obstacle.distance;
+        
+        // Customize message based on object type
+        if (obstacle.className === 'person') {
+            alertMessage = `Person ${distanceText} ${directionText}`;
+        } else if (['car', 'truck', 'bus'].includes(obstacle.className)) {
+            alertMessage = `Vehicle ${distanceText} ${directionText}`;
+        } else if (['bicycle', 'motorcycle'].includes(obstacle.className)) {
+            alertMessage = `${obstacle.className} ${distanceText} ${directionText}`;
+        } else {
+            alertMessage = `Obstacle ${distanceText} ${directionText}`;
+        }
+        
+        // Add urgency marker for critical close obstacles
+        if (obstacle.priority === 'critical' && obstacle.distance === 'very close') {
+            alertMessage = 'Caution! ' + alertMessage;
+        }
+        
+        console.log('Obstacle alert:', alertMessage);
+        this.speakWithPriority(alertMessage, speechPriority);
+    }
+    
+    /**
+     * Toggle obstacle alerts on/off
+     */
+    toggleObstacleAlerts() {
+        if (this.obstacleAlertEnabled) {
+            this.obstacleAlertEnabled = false;
+            this.speakWithPriority('Obstacle alerts disabled', 'medium');
+            console.log('Obstacle alerts disabled by user');
+            
+            // Update button text
+            const btn = document.getElementById('toggleObstacleAlerts');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Enable Obstacle Alerts';
+                btn.classList.remove('btn-outline-warning');
+                btn.classList.add('btn-outline-success');
+            }
+        } else {
+            this.obstacleAlertEnabled = true;
+            this.speakWithPriority('Obstacle alerts enabled', 'medium');
+            console.log('Obstacle alerts enabled by user');
+            
+            // Update button text
+            const btn = document.getElementById('toggleObstacleAlerts');
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Disable Obstacle Alerts';
+                btn.classList.remove('btn-outline-success');
+                btn.classList.add('btn-outline-warning');
+            }
+        }
     }
 }
 

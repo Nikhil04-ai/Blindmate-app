@@ -1995,6 +1995,16 @@ class BlindMate {
                 }
                 break;
                 
+            case 'toggle_obstacle_alerts':
+                console.log('Toggling obstacle alerts');
+                this.speak(result.response || 'Toggling obstacle alerts...', true);
+                if (window.blindMateNavigation && window.blindMateNavigation.toggleObstacleAlerts) {
+                    window.blindMateNavigation.toggleObstacleAlerts();
+                } else {
+                    this.speak('Obstacle alert system is not available.', true);
+                }
+                break;
+                
             case 'preview_route':
                 console.log('Gemini preview action:', result.destination);
                 if (result.destination) {
