@@ -1083,26 +1083,19 @@ class BlindMate {
      * Process navigation commands directly
      */
     processNavigationCommand(command) {
-        console.log('Processing navigation command:', command);
-        this.updateStatus('🧭 Processing navigation request...', 'info');
+        console.log('Processing navigation command directly:', command);
         
         // Extract destination from command
         let destination = this.extractDestination(command);
         
         if (destination) {
-            this.speak(`Searching for route to ${destination}`, true);
-            
-            // Check if navigation system is available
-            if (this.navigation && typeof this.navigation.startNavigation === 'function') {
-                this.navigation.startNavigation(destination);
-            } else {
-                // Fallback for when navigation is not fully initialized
-                this.updateStatus(`Navigation to ${destination} requested. Please ensure location services are enabled.`, 'warning');
-                this.speak(`I understand you want to go to ${destination}. Please make sure location services are enabled and try the navigation button.`, true);
-            }
+            console.log('Direct navigation to:', destination);
+            // Use the enhanced navigation system via navigateToLocation
+            this.navigateToLocation(destination);
         } else {
-            this.updateStatus('Could not understand the destination. Please specify where you want to go.', 'warning');
-            this.speak('Please specify where you want to go more clearly', true);
+            // If we can't extract destination with basic patterns, use Gemini AI
+            console.log('Could not extract destination, using Gemini AI processing');
+            this.processVoiceCommand(command);
         }
     }
     
@@ -1369,9 +1362,11 @@ class BlindMate {
                 const hasWakeWord = this.wakeWords.some(wake => command.includes(wake));
                 
                 if (hasWakeWord) {
+                    console.log('Wake word detected in command:', command);
                     // Extract command after wake word
                     const commandAfterWake = command.split(/hey\s*blind\s*mate\s*/i)[1]?.trim();
                     if (commandAfterWake) {
+                        console.log('Processing command after wake word:', commandAfterWake);
                         this.speak('Yes, how can I help?', true);
                         this.processVoiceCommand(commandAfterWake);
                     } else {
@@ -1840,6 +1835,7 @@ class BlindMate {
             console.log('Gemini response:', result);
             
             // Execute the action based on Gemini's response
+            console.log('About to execute action:', result.action, 'with destination:', result.destination);
             await this.executeAction(result);
             
         } catch (error) {
@@ -1958,8 +1954,10 @@ class BlindMate {
                 break;
                 
             case 'navigate':
-                console.log('Gemini navigate action:', result.destination);
+                console.log('Processing navigate action with destination:', result.destination);
+                this.speak(result.response || 'Starting navigation...', true);
                 if (result.destination) {
+                    console.log('Calling navigateToLocation with:', result.destination);
                     await this.navigateToLocation(result.destination);
                 } else {
                     this.speak('I need a destination to navigate to. Please say the name of any place, landmark, or address.', true);
