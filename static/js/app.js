@@ -86,6 +86,7 @@ class BlindMate {
         this.volumeUpPressed = false;
         this.volumeKeyTimeout = null;
         this.currentListeningTimeout = null;
+        this.speechDetected = false;
         
         // Mobile double-tap gesture detection
         this.lastTapTime = 0;
@@ -691,6 +692,7 @@ class BlindMate {
         // Command recognition event handlers
         this.commandRecognition.onstart = () => {
             this.isListening = true;
+            this.speechDetected = false; // Track if actual speech was detected
             this.updateStatus('🎤 Listening... Speak your command now', 'primary');
             this.elements.voiceStatus.textContent = 'Listening';
             this.elements.voiceStatus.className = 'badge bg-primary';
@@ -709,16 +711,25 @@ class BlindMate {
             const confidence = event.results[0][0].confidence;
             console.log('Voice command received:', command, 'Confidence:', confidence);
             
-            // Only process if we have actual meaningful content
-            if (command.length > 0) {
+            // Mark that speech was detected
+            this.speechDetected = true;
+            
+            // Only process if we have actual meaningful content and good confidence
+            if (command.length > 2 && confidence > 0.3) {
                 // Show command in UI
                 this.showRecognizedCommand(command);
                 
-                // Process the command via Gemini
-                this.processVoiceCommand(command);
+                // Check if this is a navigation command first
+                if (this.isNavigationCommand(command)) {
+                    console.log('Navigation command detected:', command);
+                    this.processNavigationCommand(command);
+                } else {
+                    // Process the command via Gemini for other commands
+                    this.processVoiceCommand(command);
+                }
             } else {
-                console.log('Empty command received, ignoring');
-                this.updateStatus('No command detected. Ready for next voice command.', 'info');
+                console.log('Low confidence or short command received, ignoring:', command, 'Confidence:', confidence);
+                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
             }
         };
         
@@ -735,10 +746,16 @@ class BlindMate {
                 this.showTextFallback();
                 this.speak('Microphone access needed. Please allow and try again.', true);
             } else if (event.error === 'no-speech') {
-                // For no-speech errors (common with volume button), don't show alarming messages
-                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
-                console.log('No speech detected - this is normal for quick volume button presses');
-                // Don't announce error for no-speech, as it's often intentional (accidental volume press)
+                // For no-speech errors, check if any speech was actually detected
+                if (!this.speechDetected) {
+                    // No speech was detected at all - this is normal for accidental volume presses
+                    this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+                    console.log('No speech detected - this is normal for quick volume button presses or silence');
+                } else {
+                    // Speech was detected but cut off - try again
+                    this.updateStatus('Speech was cut off. Please try again.', 'warning');
+                    this.speak('Please speak your command again', true);
+                }
             } else if (event.error === 'aborted') {
                 // Recognition was intentionally stopped, don't show error
                 this.updateStatus('Voice command cancelled.', 'info');
@@ -990,18 +1007,83 @@ class BlindMate {
     startVoiceCommandWithTimeout() {
         // Set a timeout to automatically stop listening if no speech detected
         const listeningTimeout = setTimeout(() => {
-            if (this.isListening) {
-                console.log('Voice command timeout - stopping automatically');
+            if (this.isListening && !this.speechDetected) {
+                console.log('Voice command timeout - no speech detected, stopping silently');
                 this.stopVoiceCommand();
-                this.updateStatus('Voice command timeout. Ready for next command.', 'info');
+                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
             }
-        }, 8000); // 8 seconds timeout
+        }, 6000); // 6 seconds timeout
         
         // Store timeout ID to clear it if command succeeds
         this.currentListeningTimeout = listeningTimeout;
         
         // Start normal voice command
         this.startVoiceCommand();
+    }
+    
+    /**
+     * Check if a command is a navigation command
+     */
+    isNavigationCommand(command) {
+        const navigationKeywords = [
+            'take me to', 'go to', 'navigate to', 'direction to', 'directions to',
+            'route to', 'find route to', 'show route to', 'how to get to',
+            'where is', 'location of', 'find location', 'search for',
+            'navigate', 'directions', 'route', 'go'
+        ];
+        
+        const lowercaseCommand = command.toLowerCase();
+        return navigationKeywords.some(keyword => lowercaseCommand.includes(keyword));
+    }
+    
+    /**
+     * Process navigation commands directly
+     */
+    processNavigationCommand(command) {
+        console.log('Processing navigation command:', command);
+        this.updateStatus('🧭 Processing navigation request...', 'info');
+        
+        // Extract destination from command
+        let destination = this.extractDestination(command);
+        
+        if (destination) {
+            this.speak(`Searching for route to ${destination}`, true);
+            
+            // Check if navigation system is available
+            if (this.navigation && typeof this.navigation.startNavigation === 'function') {
+                this.navigation.startNavigation(destination);
+            } else {
+                // Fallback for when navigation is not fully initialized
+                this.updateStatus(`Navigation to ${destination} requested. Please ensure location services are enabled.`, 'warning');
+                this.speak(`I understand you want to go to ${destination}. Please make sure location services are enabled and try the navigation button.`, true);
+            }
+        } else {
+            this.updateStatus('Could not understand the destination. Please specify where you want to go.', 'warning');
+            this.speak('Please specify where you want to go more clearly', true);
+        }
+    }
+    
+    /**
+     * Extract destination from navigation command
+     */
+    extractDestination(command) {
+        const lowercaseCommand = command.toLowerCase();
+        
+        // Patterns to extract destination
+        const patterns = [
+            /(?:take me to|go to|navigate to|direction to|directions to|route to|find route to|show route to|how to get to)\s+(.+)/i,
+            /(?:where is|location of|find location|search for)\s+(.+)/i,
+            /(?:navigate|directions|route)\s+(.+)/i
+        ];
+        
+        for (const pattern of patterns) {
+            const match = command.match(pattern);
+            if (match && match[1]) {
+                return match[1].trim();
+            }
+        }
+        
+        return null;
     }
     
     /**
@@ -1665,6 +1747,24 @@ class BlindMate {
     async processVoiceCommand(command) {
         console.log('Processing voice command:', command);
         
+        // Filter out common meaningless phrases that might trigger false processing
+        const meaninglessPatterns = [
+            /^(um|uh|ah|er|hm|hmm|yes|yeah|no|okay|ok)$/i,
+            /^sorry i didn'?t understand/i,
+            /^please try again/i,
+            /^what$/i,
+            /^\s*$/,  // Empty or whitespace only
+            /^.{1,2}$/  // Very short commands (1-2 characters)
+        ];
+        
+        const isEmptyCommand = meaninglessPatterns.some(pattern => pattern.test(command.trim()));
+        
+        if (isEmptyCommand) {
+            console.log('Filtering out meaningless command:', command);
+            this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+            return;
+        }
+        
         try {
             this.updateStatus('Processing your command...', 'primary');
             
@@ -1772,6 +1872,11 @@ class BlindMate {
         
         // Execute the requested action
         switch (result.action) {
+            case 'silent':
+                // Do nothing for meaningless commands - prevents false error messages
+                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+                return;
+                
             case 'start_detection':
                 if (!this.isDetecting) {
                     await this.startDetection();

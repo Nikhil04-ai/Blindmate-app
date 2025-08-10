@@ -248,6 +248,24 @@ Respond only with valid JSON, no extra text."""
         
         command_lower = command.lower().strip()
         
+        # Filter out meaningless commands first
+        meaningless_patterns = [
+            r'^(um|uh|ah|er|hm|hmm|yes|yeah|no|okay|ok)$',
+            r'^sorry i didn\'?t understand',
+            r'^please try again',
+            r'^what$',
+            r'^\s*$',  # Empty or whitespace only
+            r'^.{1,2}$'  # Very short commands (1-2 characters)
+        ]
+        
+        for pattern in meaningless_patterns:
+            if re.match(pattern, command_lower, re.IGNORECASE):
+                # Return silent action for meaningless commands
+                return {
+                    'action': 'silent',
+                    'response': ''
+                }
+        
         # Simple keyword matching
         if any(word in command_lower for word in ['start', 'begin', 'शुरू', 'தொடங்கு', 'ప్రారంభించు']):
             if any(word in command_lower for word in ['detection', 'scanning', 'डिटेक्शन', 'कॅन', 'கண்டறிதல்']):
