@@ -474,11 +474,32 @@ class UniversalNavigation {
             });
         }
         
-        // Emergency stop button
+        // Navigation control buttons
         const emergencyBtn = document.getElementById('emergencyStop');
         if (emergencyBtn) {
             emergencyBtn.addEventListener('click', () => {
                 this.emergencyStop();
+            });
+        }
+        
+        const showMapBtn = document.getElementById('showMapBtn');
+        if (showMapBtn) {
+            showMapBtn.addEventListener('click', () => {
+                this.showNavigationMap();
+            });
+        }
+        
+        const testVoiceBtn = document.getElementById('testVoiceBtn');
+        if (testVoiceBtn) {
+            testVoiceBtn.addEventListener('click', () => {
+                this.testVoiceRecognition();
+            });
+        }
+        
+        const resumeNavigationBtn = document.getElementById('resumeNavigation');
+        if (resumeNavigationBtn) {
+            resumeNavigationBtn.addEventListener('click', () => {
+                this.resumeNavigationFromMap();
             });
         }
         
@@ -524,10 +545,10 @@ class UniversalNavigation {
             mainBtn.classList.remove('listening', 'navigating');
         }
         
-        // Show/hide emergency stop button
-        const emergencyBtn = document.getElementById('emergencyStop');
-        if (emergencyBtn) {
-            emergencyBtn.style.display = this.isNavigating ? 'block' : 'none';
+        // Show/hide navigation controls
+        const navControls = document.getElementById('navigationControls');
+        if (navControls) {
+            navControls.style.display = this.isNavigating ? 'block' : 'none';
         }
     }
     
@@ -1569,6 +1590,162 @@ class UniversalNavigation {
         
         if (statusTitle) statusTitle.textContent = title;
         if (statusSubtitle) statusSubtitle.textContent = subtitle;
+    }
+    
+    /**
+     * Show navigation map in modal
+     */
+    showNavigationMap() {
+        console.log('Showing navigation map');
+        
+        if (!this.currentRoute) {
+            this.speak('No active route to display. Please start navigation first.', true);
+            return;
+        }
+        
+        // Initialize map in modal if not already done
+        this.initializeMapModal();
+        
+        // Show the modal
+        const mapModal = new bootstrap.Modal(document.getElementById('navigationMapModal'));
+        mapModal.show();
+        
+        // Update route info
+        const routeInfo = document.getElementById('routeInfo');
+        if (routeInfo && this.currentRoute) {
+            const totalDistance = this.currentRoute.legs[0].distance.text;
+            const totalTime = this.currentRoute.legs[0].duration.text;
+            const currentStep = this.currentStepIndex + 1;
+            const totalSteps = this.currentRoute.legs[0].steps.length;
+            
+            routeInfo.textContent = `Step ${currentStep}/${totalSteps} • ${totalDistance} • ${totalTime}`;
+        }
+        
+        this.speak('Navigation map is now displayed. Use the Resume Navigation button to continue.', true);
+    }
+    
+    /**
+     * Initialize map in modal
+     */
+    initializeMapModal() {
+        if (this.modalMap) return; // Already initialized
+        
+        const mapContainer = document.getElementById('navigationMap');
+        if (!mapContainer) return;
+        
+        // Create map with current location
+        this.modalMap = new google.maps.Map(mapContainer, {
+            zoom: 15,
+            center: this.currentPosition ? 
+                { lat: this.currentPosition.latitude, lng: this.currentPosition.longitude } :
+                { lat: 0, lng: 0 },
+            mapTypeId: google.maps.MapTypeId.ROADMAP
+        });
+        
+        // Show current route
+        if (this.currentRoute) {
+            const directionsRenderer = new google.maps.DirectionsRenderer({
+                directions: { routes: [this.currentRoute] },
+                map: this.modalMap,
+                suppressMarkers: false
+            });
+        }
+        
+        // Show current position
+        if (this.currentPosition) {
+            this.modalUserMarker = new google.maps.Marker({
+                position: { lat: this.currentPosition.latitude, lng: this.currentPosition.longitude },
+                map: this.modalMap,
+                title: 'Your Current Location',
+                icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="8" fill="#007bff" stroke="#fff" stroke-width="2"/></svg>'),
+                    scaledSize: new google.maps.Size(20, 20)
+                }
+            });
+        }
+    }
+    
+    /**
+     * Resume navigation from map modal
+     */
+    resumeNavigationFromMap() {
+        console.log('Resuming navigation from map');
+        
+        // Close the modal
+        const mapModal = bootstrap.Modal.getInstance(document.getElementById('navigationMapModal'));
+        if (mapModal) {
+            mapModal.hide();
+        }
+        
+        this.speak('Navigation resumed. Continue following the voice instructions.', true);
+    }
+    
+    /**
+     * Test voice recognition functionality
+     */
+    testVoiceRecognition() {
+        console.log('Testing voice recognition');
+        
+        this.speak('Voice recognition test starting. Please say something after the beep.', true);
+        
+        // Give a moment for the announcement to finish
+        setTimeout(() => {
+            if (!this.recognition) {
+                this.speak('Voice recognition is not available on this device.', true);
+                return;
+            }
+            
+            // Test recognition
+            const testRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            testRecognition.continuous = false;
+            testRecognition.interimResults = false;
+            testRecognition.lang = 'en-US';
+            
+            testRecognition.onstart = () => {
+                this.speak('Now listening. Say anything to test voice recognition.', true);
+            };
+            
+            testRecognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                const confidence = event.results[0][0].confidence;
+                
+                console.log('Voice test result:', transcript, 'Confidence:', confidence);
+                this.speak(`Voice recognition working. I heard: ${transcript}`, true);
+            };
+            
+            testRecognition.onerror = (event) => {
+                console.error('Voice test error:', event.error);
+                let errorMessage = 'Voice recognition test failed.';
+                
+                switch (event.error) {
+                    case 'not-allowed':
+                        errorMessage = 'Microphone access denied. Please allow microphone access.';
+                        break;
+                    case 'no-speech':
+                        errorMessage = 'No speech detected. Please try speaking clearly.';
+                        break;
+                    case 'audio-capture':
+                        errorMessage = 'No microphone found. Please check your microphone.';
+                        break;
+                    case 'network':
+                        errorMessage = 'Network error. Please check your internet connection.';
+                        break;
+                }
+                
+                this.speak(errorMessage, true);
+            };
+            
+            testRecognition.onend = () => {
+                console.log('Voice recognition test completed');
+            };
+            
+            try {
+                testRecognition.start();
+            } catch (error) {
+                console.error('Failed to start voice test:', error);
+                this.speak('Failed to start voice recognition test. Please try again.', true);
+            }
+        }, 2000);
     }
 }
 

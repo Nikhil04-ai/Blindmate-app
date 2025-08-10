@@ -222,28 +222,56 @@
                         </div>
                         
                         <!-- Navigation Controls (initially hidden) -->
-                        <div id="navigationControls" style="display: none;" class="mt-2">
-                            <button id="showMapBtn" class="btn btn-info w-100 mb-2">
-                                <i class="fas fa-map" aria-hidden="true"></i>
-                                Show Navigation Map
-                            </button>
-                            <button id="emergencyStop" class="btn btn-danger w-100">
-                                <i class="fas fa-stop" aria-hidden="true"></i>
-                                Emergency Stop Navigation
-                            </button>
-                        </div>
-                        
-                        <!-- Debug Controls (for troubleshooting) -->
-                        <div class="mt-2">
-                            <button id="testVoiceBtn" class="btn btn-secondary btn-sm w-100" onclick="if(window.navigation) window.navigation.testVoiceRecognition()">
-                                <i class="fas fa-microphone-slash" aria-hidden="true"></i>
-                                Test Voice Recognition
-                            </button>
+                        <div id="navigationControls" style="display: none;" class="mt-3">
+                            <div class="d-grid gap-2">
+                                <button id="showMapBtn" class="btn btn-outline-primary btn-lg">
+                                    <i class="fas fa-map" aria-hidden="true"></i>
+                                    Show Navigation Map
+                                </button>
+                                <button id="emergencyStop" class="btn btn-danger btn-lg">
+                                    <i class="fas fa-stop-circle" aria-hidden="true"></i>
+                                    Emergency Stop Navigation
+                                </button>
+                                <button id="testVoiceBtn" class="btn btn-outline-secondary btn-lg">
+                                    <i class="fas fa-microphone-lines" aria-hidden="true"></i>
+                                    Test Voice Recognition
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </main>
+
+        <!-- Navigation Map Modal -->
+        <div class="modal fade" id="navigationMapModal" tabindex="-1" aria-labelledby="navigationMapModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="navigationMapModalLabel">
+                            <i class="fas fa-route"></i> Navigation Route
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <div id="navigationMap" style="height: 70vh; width: 100%;"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <div class="d-flex justify-content-between w-100">
+                            <div>
+                                <span class="badge bg-primary" id="routeInfo">Route Information</span>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close Map</button>
+                                <button type="button" class="btn btn-success" id="resumeNavigation">
+                                    <i class="fas fa-play"></i> Resume Navigation
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Footer -->
         <footer class="row bg-dark text-white py-3">

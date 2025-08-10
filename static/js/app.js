@@ -1964,6 +1964,37 @@ class BlindMate {
                 }
                 break;
                 
+            case 'show_map':
+                console.log('Showing navigation map');
+                this.speak(result.response || 'Showing navigation map...', true);
+                if (window.blindMateNavigation && window.blindMateNavigation.showNavigationMap) {
+                    window.blindMateNavigation.showNavigationMap();
+                } else {
+                    this.speak('Navigation map is not available. Please start navigation first.', true);
+                }
+                break;
+                
+            case 'emergency_stop':
+                console.log('Emergency stop navigation');
+                this.speak(result.response || 'Stopping navigation immediately...', true);
+                if (window.blindMateNavigation && window.blindMateNavigation.emergencyStop) {
+                    window.blindMateNavigation.emergencyStop();
+                } else {
+                    this.speak('Navigation is not currently active.', true);
+                }
+                break;
+                
+            case 'test_voice':
+                console.log('Testing voice recognition');
+                this.speak(result.response || 'Testing voice recognition...', true);
+                if (window.blindMateNavigation && window.blindMateNavigation.testVoiceRecognition) {
+                    window.blindMateNavigation.testVoiceRecognition();
+                } else {
+                    // Fallback test using main app's voice system
+                    this.testVoiceRecognitionFallback();
+                }
+                break;
+                
             case 'preview_route':
                 console.log('Gemini preview action:', result.destination);
                 if (result.destination) {
@@ -2012,6 +2043,40 @@ class BlindMate {
                     this.speak('I understood your command but could not perform the action.', true);
                 }
         }
+    }
+    
+    /**
+     * Fallback voice recognition test using main app system
+     */
+    testVoiceRecognitionFallback() {
+        console.log('Testing voice recognition via main app fallback');
+        
+        this.speak('Voice recognition test starting. Please say something after the prompt.', true);
+        
+        setTimeout(() => {
+            if (!this.commandRecognition) {
+                this.speak('Voice recognition is not available on this device.', true);
+                return;
+            }
+            
+            try {
+                this.commandRecognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    console.log('Voice test result:', transcript);
+                    this.speak(`Voice recognition working perfectly. I heard: ${transcript}`, true);
+                    
+                    // Restore normal command processing
+                    this.setupVoiceRecognition();
+                };
+                
+                this.commandRecognition.start();
+                this.speak('Now listening for your test voice command.', true);
+                
+            } catch (error) {
+                console.error('Voice test failed:', error);
+                this.speak('Voice recognition test failed. Please check your microphone permissions.', true);
+            }
+        }, 2000);
     }
 
     /**

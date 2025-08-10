@@ -156,11 +156,14 @@ Available actions:
 3. navigate - Navigate to a destination
 4. preview_route - Preview route to destination
 5. stop_navigation - Stop current navigation
-6. save_location - Save current location with a name
-7. enable_location - Enable location services
-8. change_language - Change interface language
-9. change_tone - Change voice tone/style
-10. unknown - For unrecognized commands
+6. show_map - Show navigation map during navigation
+7. emergency_stop - Emergency stop navigation immediately
+8. test_voice - Test voice recognition functionality
+9. save_location - Save current location with a name
+10. enable_location - Enable location services
+11. change_language - Change interface language
+12. change_tone - Change voice tone/style
+13. unknown - For unrecognized commands
 
 Response format (JSON only):
 {{
@@ -173,6 +176,9 @@ Response format (JSON only):
 
 Command examples:
 - "start detection" -> {{"action": "start_detection", "response": "Starting object detection"}}
+- "show map" or "show navigation map" -> {{"action": "show_map", "response": "Showing navigation map"}}
+- "emergency stop" or "stop navigation now" -> {{"action": "emergency_stop", "response": "Stopping navigation immediately"}}
+- "test voice" or "check microphone" -> {{"action": "test_voice", "response": "Testing voice recognition"}}
 - "take me to library" -> {{"action": "navigate", "destination": "library", "response": "Navigating to library"}}
 - "change language to Hindi" -> {{"action": "change_language", "language": "hi-IN", "response": "भाषा हिंदी में बदल दी गई है"}}
 - "change tone to formal" -> {{"action": "change_tone", "tone": "formal", "response": "Voice tone changed to formal"}}
