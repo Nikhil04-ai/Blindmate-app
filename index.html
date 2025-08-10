@@ -271,17 +271,25 @@
         async function loadGoogleMapsAPI() {
             try {
                 const response = await fetch('/api/google-maps-key');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
                 
-                if (data.key) {
+                if (data.key && data.key.trim()) {
                     const script = document.createElement('script');
                     script.src = `https://maps.googleapis.com/maps/api/js?key=${data.key}&callback=initMap&libraries=places`;
                     script.async = true;
                     script.defer = true;
+                    script.onerror = function() {
+                        console.error('Failed to load Google Maps JavaScript API');
+                    };
                     document.head.appendChild(script);
                     console.log('Loading Google Maps API with valid key');
                 } else {
-                    console.error('Google Maps API key not available');
+                    console.error('Google Maps API key not available or empty');
                 }
             } catch (error) {
                 console.error('Failed to load Google Maps API key:', error);
@@ -323,10 +331,11 @@
             }, 2000);
         }
         
-        // Map control functions
+        // Map control functions and navigation controls
         document.addEventListener('DOMContentLoaded', function() {
             const showMapBtn = document.getElementById('showMapBtn');
             const closeMapBtn = document.getElementById('closeMap');
+            const emergencyStopBtn = document.getElementById('emergencyStop');
             const navigationMapContainer = document.getElementById('navigationMapContainer');
             
             if (showMapBtn) {
@@ -341,6 +350,16 @@
                 closeMapBtn.addEventListener('click', function() {
                     if (navigationMapContainer) {
                         navigationMapContainer.style.display = 'none';
+                    }
+                });
+            }
+            
+            if (emergencyStopBtn) {
+                emergencyStopBtn.addEventListener('click', function() {
+                    if (window.blindMateNavigation && window.blindMateNavigation.isNavigating) {
+                        window.blindMateNavigation.stopNavigation();
+                    } else if (window.navigation && window.navigation.isNavigating) {
+                        window.navigation.stopNavigation();
                     }
                 });
             }

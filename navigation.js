@@ -433,8 +433,8 @@ class UniversalNavigation {
             this.currentStepIndex = 0;
             this.isNavigating = true;
             
-            // Start GPS tracking
-            this.startGPSTracking();
+            // Start continuous GPS tracking for navigation
+            this.startContinuousGPSTracking();
             
             // Display route on map if available
             if (this.map && this.directionsRenderer) {
@@ -446,6 +446,9 @@ class UniversalNavigation {
             
             // Enable obstacle detection during navigation
             this.startObstacleDetection();
+            
+            // Show navigation controls
+            document.getElementById('navigationControls').style.display = 'block';
             
             console.log('Navigation started successfully');
             
@@ -474,7 +477,7 @@ class UniversalNavigation {
     }
     
     /**
-     * Announce current navigation step
+     * Announce current navigation step with optimized voice instructions
      */
     announceCurrentStep() {
         if (!this.isNavigating || !this.currentRoute) return;
@@ -486,36 +489,179 @@ class UniversalNavigation {
         }
         
         const currentStep = steps[this.currentStepIndex];
-        const instruction = currentStep.instruction;
-        const distance = currentStep.distance;
+        const instruction = this.optimizeVoiceInstruction(currentStep.instruction);
+        const distance = this.simplifyDistance(currentStep.distance_value || currentStep.distance_meters || 0);
         
-        this.speak(`${instruction}. Distance: ${distance}.`);
+        // Create short, clear voice instruction
+        const voiceInstruction = `${instruction} in ${distance}`;
+        
+        this.speak(voiceInstruction);
         this.updateStatusDisplay(`Step ${this.currentStepIndex + 1} of ${steps.length}`, instruction);
+        
+        console.log(`Navigation step ${this.currentStepIndex + 1}: ${voiceInstruction}`);
     }
     
     /**
-     * Start GPS tracking during navigation
+     * Optimize voice instructions for visually impaired users
      */
-    startGPSTracking() {
+    optimizeVoiceInstruction(instruction) {
+        // Simplify and shorten instructions for better accessibility
+        let optimized = instruction.toLowerCase();
+        
+        // Replace common phrases with shorter ones
+        optimized = optimized.replace(/head\s+/gi, '');
+        optimized = optimized.replace(/continue\s+/gi, '');
+        optimized = optimized.replace(/proceed\s+/gi, '');
+        optimized = optimized.replace(/turn\s+left/gi, 'turn left');
+        optimized = optimized.replace(/turn\s+right/gi, 'turn right');
+        optimized = optimized.replace(/walk\s+/gi, '');
+        optimized = optimized.replace(/go\s+/gi, '');
+        optimized = optimized.replace(/\s+on\s+/, ' on ');
+        optimized = optimized.replace(/toward\s+/gi, 'toward ');
+        optimized = optimized.replace(/destination\s+will\s+be\s+on\s+the\s+/gi, 'destination on ');
+        
+        // Capitalize first letter
+        optimized = optimized.charAt(0).toUpperCase() + optimized.slice(1);
+        
+        return optimized;
+    }
+    
+    /**
+     * Simplify distance for voice announcements
+     */
+    simplifyDistance(meters) {
+        if (meters < 50) {
+            return `${Math.round(meters / 10) * 10} meters`;
+        } else if (meters < 1000) {
+            return `${Math.round(meters / 50) * 50} meters`;
+        } else {
+            const km = (meters / 1000).toFixed(1);
+            return `${km} kilometers`;
+        }
+    }
+    
+    /**
+     * Start continuous GPS tracking during navigation
+     */
+    startContinuousGPSTracking() {
         if (this.watchId) {
             navigator.geolocation.clearWatch(this.watchId);
         }
         
         this.watchId = navigator.geolocation.watchPosition(
             (position) => {
-                this.updatePosition(position.coords);
+                this.updateNavigationPosition(position.coords);
             },
             (error) => {
                 console.error('GPS tracking error:', error);
+                this.speak('GPS signal lost. Please check your location settings.');
             },
             {
                 enableHighAccuracy: true,
-                timeout: 5000,
-                maximumAge: 10000
+                timeout: 10000,
+                maximumAge: 5000
             }
         );
         
-        console.log('GPS tracking started');
+        console.log('Continuous GPS tracking started for navigation');
+    }
+    
+    /**
+     * Update position during navigation and check progress
+     */
+    updateNavigationPosition(coords) {
+        if (!this.isNavigating || !this.currentRoute) return;
+        
+        const newLat = coords.latitude;
+        const newLng = coords.longitude;
+        
+        // Update current position
+        this.currentPosition = coords;
+        
+        // Update map marker if available
+        if (this.map && this.userMarker) {
+            this.userMarker.setPosition({ lat: newLat, lng: newLng });
+        }
+        
+        // Check if user reached current step
+        this.checkStepProgress(newLat, newLng);
+        
+        // Check if user deviated from route
+        this.checkRouteDeviation(newLat, newLng);
+    }
+    
+    /**
+     * Check if user has reached the current navigation step
+     */
+    checkStepProgress(lat, lng) {
+        if (!this.currentRoute || this.currentStepIndex >= this.currentRoute.route.steps.length) return;
+        
+        const currentStep = this.currentRoute.route.steps[this.currentStepIndex];
+        const stepEndLat = currentStep.end_location.lat;
+        const stepEndLng = currentStep.end_location.lng;
+        
+        // Calculate distance to step endpoint
+        const distance = this.calculateDistance(lat, lng, stepEndLat, stepEndLng);
+        
+        // If within 25 meters of step endpoint, advance to next step
+        if (distance < 25) {
+            this.currentStepIndex++;
+            
+            if (this.currentStepIndex >= this.currentRoute.route.steps.length) {
+                this.navigationComplete();
+            } else {
+                // Announce next step
+                setTimeout(() => {
+                    this.announceCurrentStep();
+                }, 1000);
+            }
+        }
+    }
+    
+    /**
+     * Check if user has deviated significantly from the planned route
+     */
+    checkRouteDeviation(lat, lng) {
+        if (!this.currentRoute || this.currentStepIndex >= this.currentRoute.route.steps.length) return;
+        
+        const currentStep = this.currentRoute.route.steps[this.currentStepIndex];
+        const stepStartLat = currentStep.start_location.lat;
+        const stepStartLng = currentStep.start_location.lng;
+        const stepEndLat = currentStep.end_location.lat;
+        const stepEndLng = currentStep.end_location.lng;
+        
+        // Calculate distance from user to the step route line
+        const distanceToRoute = this.calculateDistanceToLine(
+            lat, lng, 
+            stepStartLat, stepStartLng, 
+            stepEndLat, stepEndLng
+        );
+        
+        // If user is more than 50 meters off route, trigger rerouting
+        if (distanceToRoute > 50) {
+            this.handleRouteDeviation();
+        }
+    }
+    
+    /**
+     * Handle when user deviates from planned route
+     */
+    async handleRouteDeviation() {
+        if (this.reroutingInProgress) return;
+        
+        this.reroutingInProgress = true;
+        this.speak('You seem off route. Getting updated directions...');
+        
+        try {
+            // Get new route from current position
+            await this.startNavigation(this.currentDestination);
+            this.speak('Route updated. Follow new directions.');
+        } catch (error) {
+            console.error('Rerouting failed:', error);
+            this.speak('Unable to update route. Continue to destination.');
+        } finally {
+            this.reroutingInProgress = false;
+        }
     }
     
     /**
@@ -685,33 +831,124 @@ class UniversalNavigation {
      * Navigation completed
      */
     navigationComplete() {
-        this.speak('You have arrived at your destination.');
-        this.updateStatusDisplay('Navigation Complete', 'You have arrived');
-        this.stopNavigation();
-    }
-    
-    /**
-     * Stop navigation
-     */
-    stopNavigation() {
         this.isNavigating = false;
-        this.currentRoute = null;
-        this.currentStepIndex = 0;
-        this.awaitingConfirmation = false;
-        this.currentDestination = null;
-        this.isDetecting = false;
         
+        // Stop GPS tracking
         if (this.watchId) {
             navigator.geolocation.clearWatch(this.watchId);
             this.watchId = null;
         }
         
+        // Stop obstacle detection
+        this.isDetecting = false;
+        
+        // Hide navigation controls
+        const navControls = document.getElementById('navigationControls');
+        if (navControls) {
+            navControls.style.display = 'none';
+        }
+        
+        // Announce completion
+        this.speak('You have arrived at your destination. Navigation complete.');
+        this.updateStatusDisplay('Navigation Complete', 'You have arrived at your destination');
+        
+        // Clear route data
+        this.currentRoute = null;
+        this.currentStepIndex = 0;
+        this.currentDestination = null;
+        
+        console.log('Navigation completed successfully');
+    }
+    
+    /**
+     * Emergency stop navigation
+     */
+    stopNavigation() {
+        this.isNavigating = false;
+        this.reroutingInProgress = false;
+        
+        // Stop GPS tracking
+        if (this.watchId) {
+            navigator.geolocation.clearWatch(this.watchId);
+            this.watchId = null;
+        }
+        
+        // Stop obstacle detection
+        this.isDetecting = false;
+        
+        // Hide navigation controls
+        const navControls = document.getElementById('navigationControls');
+        if (navControls) {
+            navControls.style.display = 'none';
+        }
+        
+        // Clear map route
         if (this.directionsRenderer) {
             this.directionsRenderer.setDirections(null);
         }
         
-        this.updateStatusDisplay('Ready', 'Press button to start navigation');
-        console.log('Navigation stopped');
+        // Announce stop
+        this.speak('Navigation stopped.');
+        this.updateStatusDisplay('Ready', 'Navigation stopped');
+        
+        // Clear route data
+        this.currentRoute = null;
+        this.currentStepIndex = 0;
+        this.currentDestination = null;
+        this.awaitingConfirmation = false;
+        
+        console.log('Navigation stopped by user');
+    }
+    
+    /**
+     * Calculate distance between two coordinates (Haversine formula)
+     */
+    calculateDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; // Distance in meters
+    }
+    
+    /**
+     * Calculate distance from point to line segment
+     */
+    calculateDistanceToLine(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const lenSq = C * C + D * D;
+        
+        if (lenSq === 0) {
+            return this.calculateDistance(px, py, x1, y1);
+        }
+        
+        let param = dot / lenSq;
+        
+        let xx, yy;
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        return this.calculateDistance(px, py, xx, yy);
     }
     
     /**

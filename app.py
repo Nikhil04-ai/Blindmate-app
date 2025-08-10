@@ -156,7 +156,9 @@ def get_directions():
             logging.info(f"Geocoding destination: {destination}")
             geocoded_coords = geocode_address(destination, api_key)
             if not geocoded_coords:
-                return jsonify({'success': False, 'message': 'Location not found'}), 404
+                return jsonify({'success': False, 'message': 'Location not found, please try again.'}), 404
+            elif 'error' in geocoded_coords:
+                return jsonify({'success': False, 'message': geocoded_coords['message']}), 404
             destination_coords = f"{geocoded_coords['lat']},{geocoded_coords['lng']}"
             logging.info(f"Geocoded '{destination}' to {destination_coords}")
         
@@ -164,7 +166,9 @@ def get_directions():
         directions_data = get_google_directions(origin, destination_coords, api_key)
         
         if not directions_data:
-            return jsonify({'success': False, 'message': 'Location not found'}), 404
+            return jsonify({'success': False, 'message': 'Route not available'}), 404
+        elif 'error' in directions_data:
+            return jsonify({'success': False, 'message': directions_data['message']}), 404
         
         # Parse and format the directions for voice navigation
         try:
@@ -211,10 +215,18 @@ def geocode_address(address, api_key):
             logging.error(f"Failed to parse geocoding response: {e}")
             return None
         
-        # Check for Google API errors
-        if data.get('status') != 'OK':
-            logging.error(f"Google Geocoding API error: {data.get('status')}")
-            return None
+        # Check for Google API errors with specific handling
+        status = data.get('status')
+        if status != 'OK':
+            if status == 'ZERO_RESULTS':
+                logging.warning(f"No results found for address: {address}")
+                return {'error': 'ZERO_RESULTS', 'message': 'Location not found, please try again.'}
+            elif status == 'REQUEST_DENIED':
+                logging.error(f"Google API request denied for address: {address}")
+                return {'error': 'REQUEST_DENIED', 'message': 'Navigation service unavailable'}
+            else:
+                logging.error(f"Google Geocoding API error: {status}")
+                return {'error': status, 'message': 'Unable to find location'}
         
         # Extract coordinates
         if data.get('results') and len(data['results']) > 0:
@@ -261,16 +273,22 @@ def get_google_directions(origin, destination, api_key):
             logging.error(f"Response content: {response.text[:500]}")
             return None
         
-        # Check for Google API errors
-        if data.get('status') != 'OK':
-            logging.error(f"Google Directions API error: {data.get('status')}")
-            if data.get('status') == 'ZERO_RESULTS':
-                return None
-            elif data.get('status') == 'NOT_FOUND':
-                return None
+        # Check for Google API errors with specific handling
+        status = data.get('status')
+        if status != 'OK':
+            if status == 'ZERO_RESULTS':
+                logging.warning(f"No route found from {origin} to {destination}")
+                return {'error': 'ZERO_RESULTS', 'message': 'Route not available'}
+            elif status == 'NOT_FOUND':
+                logging.warning(f"Location not found for directions: {origin} to {destination}")
+                return {'error': 'NOT_FOUND', 'message': 'Location not found, please try again.'}
+            elif status == 'REQUEST_DENIED':
+                logging.error(f"Google Directions API request denied")
+                return {'error': 'REQUEST_DENIED', 'message': 'Navigation service unavailable'}
             else:
-                logging.error(f"Google API error details: {data.get('error_message', 'Unknown error')}")
-                return None
+                error_msg = data.get('error_message', 'Unknown error')
+                logging.error(f"Google Directions API error: {status} - {error_msg}")
+                return {'error': status, 'message': 'Route not available'}
         
         # Validate Google response structure
         if not data.get('routes') or len(data['routes']) == 0:
@@ -347,6 +365,7 @@ def parse_google_directions(directions_data, destination_name):
                     'distance': step_distance,
                     'duration': step_duration,
                     'distance_meters': distance_m,
+                    'distance_value': distance_m,  # Add for frontend compatibility
                     'duration_seconds': duration_s,
                     'start_location': {
                         'lat': start_location.get('lat', 0),
