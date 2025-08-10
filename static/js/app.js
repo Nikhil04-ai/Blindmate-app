@@ -348,6 +348,13 @@ class BlindMate {
             // Load TensorFlow model (optional - app works without it)
             await this.loadModel();
             
+            // Ensure loading overlay is hidden after initialization
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+                console.log('Initialization complete - loading overlay hidden');
+            }
+            
             // Start voice interaction
             this.startVoiceInteraction();
             
@@ -373,6 +380,8 @@ class BlindMate {
             toneSelect: document.getElementById('toneSelect'),
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            detectionIndicator: document.getElementById('detectionIndicator'),
             systemStatus: document.getElementById('systemStatus'),
             status: document.getElementById('status'),
             statusText: document.getElementById('statusText'),
@@ -726,7 +735,7 @@ class BlindMate {
                 } else if (command.toLowerCase().includes('start detection') || command.toLowerCase().includes('start object detection')) {
                     // Handle start detection directly for faster response
                     console.log('Direct start detection command:', command);
-                    await this.fallbackCommandProcessing(command);
+                    this.fallbackCommandProcessing(command);
                 } else {
                     // Process the command via Gemini for other commands
                     this.processVoiceCommand(command);
@@ -1220,8 +1229,14 @@ class BlindMate {
             this.model = await cocoSsd.load();
             
             this.updateStatus('AI model loaded successfully!', 'success');
-            if (this.elements.loadingOverlay) {
-                this.elements.loadingOverlay.style.display = 'none';
+            
+            // Hide loading overlay
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+                console.log('Loading overlay hidden successfully');
+            } else {
+                console.warn('Loading overlay element not found');
             }
             
             console.log('COCO-SSD model loaded successfully');
@@ -1231,8 +1246,9 @@ class BlindMate {
             this.updateStatus('Object detection disabled. Voice commands and navigation still available.', 'warning');
             
             // Hide loading overlay even on error
-            if (this.elements.loadingOverlay) {
-                this.elements.loadingOverlay.style.display = 'none';
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
             }
             
             // Don't throw error - allow app to continue without object detection
