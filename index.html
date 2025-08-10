@@ -322,6 +322,29 @@
                 window.location.href = '/tutorial';
             }, 2000);
         }
+        
+        // Map control functions
+        document.addEventListener('DOMContentLoaded', function() {
+            const showMapBtn = document.getElementById('showMapBtn');
+            const closeMapBtn = document.getElementById('closeMap');
+            const navigationMapContainer = document.getElementById('navigationMapContainer');
+            
+            if (showMapBtn) {
+                showMapBtn.addEventListener('click', function() {
+                    if (navigationMapContainer) {
+                        navigationMapContainer.style.display = 'block';
+                    }
+                });
+            }
+            
+            if (closeMapBtn) {
+                closeMapBtn.addEventListener('click', function() {
+                    if (navigationMapContainer) {
+                        navigationMapContainer.style.display = 'none';
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>

@@ -132,6 +132,14 @@ class UniversalNavigation {
     }
     
     /**
+     * Initialize map (called by Google Maps API callback)
+     */
+    initializeMap() {
+        console.log('Google Maps callback triggered');
+        this.initializeGoogleMaps();
+    }
+    
+    /**
      * Request all permissions on page load
      */
     async requestAllPermissions() {
