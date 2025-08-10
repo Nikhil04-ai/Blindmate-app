@@ -1729,16 +1729,35 @@ class BlindMate {
             
             // Create contextual announcement
             let announcement = '';
-            objectsWithDistance.forEach((obj, index) => {
-                if (index > 0) announcement += '. Also, ';
-                
-                // More natural language
-                if (obj.name === 'person') {
-                    announcement += `person ${obj.position}, ${obj.distance}`;
+            
+            // During navigation, use "obstacle detected" instead of specific object names
+            if (this.isNavigating) {
+                if (objectsWithDistance.length === 1) {
+                    const obj = objectsWithDistance[0];
+                    announcement = `Obstacle detected ${obj.position}, ${obj.distance}`;
                 } else {
-                    announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
+                    // Multiple obstacles
+                    announcement = 'Multiple obstacles detected';
+                    objectsWithDistance.forEach((obj, index) => {
+                        if (index === 0) announcement += ': ';
+                        else if (index === objectsWithDistance.length - 1) announcement += ' and ';
+                        else announcement += ', ';
+                        announcement += `${obj.position}`;
+                    });
                 }
-            });
+            } else {
+                // Normal detection mode - use specific object names
+                objectsWithDistance.forEach((obj, index) => {
+                    if (index > 0) announcement += '. Also, ';
+                    
+                    // More natural language
+                    if (obj.name === 'person') {
+                        announcement += `person ${obj.position}, ${obj.distance}`;
+                    } else {
+                        announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
+                    }
+                });
+            }
             
             this.speak(announcement, false, true); // Mark as object announcement for special delay handling
             this.lastAnnouncement = now;
