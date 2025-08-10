@@ -85,6 +85,7 @@ class BlindMate {
         // Volume key detection
         this.volumeUpPressed = false;
         this.volumeKeyTimeout = null;
+        this.currentListeningTimeout = null;
         
         // Mobile double-tap gesture detection
         this.lastTapTime = 0;
@@ -698,34 +699,54 @@ class BlindMate {
         };
         
         this.commandRecognition.onresult = (event) => {
+            // Clear any listening timeout since we got a result
+            if (this.currentListeningTimeout) {
+                clearTimeout(this.currentListeningTimeout);
+                this.currentListeningTimeout = null;
+            }
+            
             const command = event.results[0][0].transcript.trim();
             const confidence = event.results[0][0].confidence;
             console.log('Voice command received:', command, 'Confidence:', confidence);
             
-            // Show command in UI
-            this.showRecognizedCommand(command);
-            
-            // Process the command via Gemini
-            this.processVoiceCommand(command);
+            // Only process if we have actual meaningful content
+            if (command.length > 0) {
+                // Show command in UI
+                this.showRecognizedCommand(command);
+                
+                // Process the command via Gemini
+                this.processVoiceCommand(command);
+            } else {
+                console.log('Empty command received, ignoring');
+                this.updateStatus('No command detected. Ready for next voice command.', 'info');
+            }
         };
         
         this.commandRecognition.onerror = (event) => {
             console.error('Command recognition error:', event.error);
             this.isListening = false;
-            this.elements.voiceStatus.textContent = 'Error';
-            this.elements.voiceStatus.className = 'badge bg-danger';
+            this.elements.voiceStatus.textContent = 'Ready';
+            this.elements.voiceStatus.className = 'badge bg-secondary';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
             
-            let errorMessage = 'Voice recognition error';
+            // Handle different error types more gracefully
             if (event.error === 'not-allowed') {
-                errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
+                this.updateStatus('Microphone access denied. Please allow microphone access.', 'warning');
                 this.showTextFallback();
+                this.speak('Microphone access needed. Please allow and try again.', true);
             } else if (event.error === 'no-speech') {
-                errorMessage = 'No speech detected. Please try again.';
+                // For no-speech errors (common with volume button), don't show alarming messages
+                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+                console.log('No speech detected - this is normal for quick volume button presses');
+                // Don't announce error for no-speech, as it's often intentional (accidental volume press)
+            } else if (event.error === 'aborted') {
+                // Recognition was intentionally stopped, don't show error
+                this.updateStatus('Voice command cancelled.', 'info');
+            } else {
+                // Only show error for actual problems
+                this.updateStatus('Voice recognition temporarily unavailable. Try again.', 'warning');
+                this.speak('Voice recognition issue. Please try again.', true);
             }
-            
-            this.updateStatus(errorMessage, 'danger');
-            this.speak('Voice command failed. Try again or use the buttons.', true);
         };
         
         this.commandRecognition.onend = () => {
@@ -733,7 +754,17 @@ class BlindMate {
             this.elements.voiceStatus.textContent = 'Ready';
             this.elements.voiceStatus.className = 'badge bg-secondary';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
-            this.updateStatus('Voice command completed. Say "Hey BlindMate" or press Volume Up for next command.', 'success');
+            
+            // Clear any listening timeout
+            if (this.currentListeningTimeout) {
+                clearTimeout(this.currentListeningTimeout);
+                this.currentListeningTimeout = null;
+            }
+            
+            // Only show completion message if we're not in an error state
+            if (!this.updateStatus.lastWasError) {
+                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'success');
+            }
             
             // Restart continuous listening for wake words
             setTimeout(() => {
@@ -811,7 +842,7 @@ class BlindMate {
      */
     startVoiceCommand() {
         if (!this.commandRecognition) {
-            this.updateStatus('Voice recognition not available.', 'danger');
+            this.updateStatus('Voice recognition not available.', 'warning');
             this.showTextFallback();
             return;
         }
@@ -825,15 +856,23 @@ class BlindMate {
             // Stop continuous listening temporarily
             this.stopContinuousListening();
             
+            // Clear any existing timeouts
+            if (this.currentListeningTimeout) {
+                clearTimeout(this.currentListeningTimeout);
+                this.currentListeningTimeout = null;
+            }
+            
             // Start command recognition
             this.commandRecognition.lang = this.currentLanguage;
             this.commandRecognition.start();
         } catch (error) {
             console.error('Error starting voice recognition:', error);
-            this.updateStatus('Could not start voice recognition. Try again.', 'danger');
+            this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
             
             // Restart continuous listening
-            this.startContinuousListening();
+            setTimeout(() => {
+                this.startContinuousListening();
+            }, 1000);
         }
     }
     
@@ -842,8 +881,27 @@ class BlindMate {
      */
     stopVoiceCommand() {
         if (this.commandRecognition && this.isListening) {
-            this.commandRecognition.stop();
+            try {
+                this.commandRecognition.stop();
+            } catch (error) {
+                console.log('Error stopping voice command:', error.message);
+            }
         }
+        
+        // Clear any pending timeouts
+        if (this.currentListeningTimeout) {
+            clearTimeout(this.currentListeningTimeout);
+            this.currentListeningTimeout = null;
+        }
+        
+        if (this.volumeKeyTimeout) {
+            clearTimeout(this.volumeKeyTimeout);
+            this.volumeKeyTimeout = null;
+        }
+        
+        // Reset state
+        this.isListening = false;
+        this.volumeUpPressed = false;
     }
     
     /**
@@ -910,14 +968,40 @@ class BlindMate {
             return;
         }
         
-        // Start voice command
-        this.updateStatus('🎤 Volume Up pressed - Starting voice command...', 'info');
-        this.speak('Voice command activated. Speak now.', true);
+        // Add debouncing to prevent accidental volume button presses
+        this.volumeUpPressed = true;
         
-        // Small delay to let the speech finish
+        // Start voice command with improved feedback
+        this.updateStatus('🎤 Volume Up pressed - Voice command ready', 'info');
+        this.speak('Voice command ready. Speak your command now.', true);
+        
+        // Delay to let the speech finish, then start listening with timeout
         this.volumeKeyTimeout = setTimeout(() => {
-            this.startVoiceCommand();
-        }, 1000);
+            if (this.volumeUpPressed) {
+                this.startVoiceCommandWithTimeout();
+                this.volumeUpPressed = false;
+            }
+        }, 1500);
+    }
+    
+    /**
+     * Start voice command with automatic timeout to prevent hanging
+     */
+    startVoiceCommandWithTimeout() {
+        // Set a timeout to automatically stop listening if no speech detected
+        const listeningTimeout = setTimeout(() => {
+            if (this.isListening) {
+                console.log('Voice command timeout - stopping automatically');
+                this.stopVoiceCommand();
+                this.updateStatus('Voice command timeout. Ready for next command.', 'info');
+            }
+        }, 8000); // 8 seconds timeout
+        
+        // Store timeout ID to clear it if command succeeds
+        this.currentListeningTimeout = listeningTimeout;
+        
+        // Start normal voice command
+        this.startVoiceCommand();
     }
     
     /**
