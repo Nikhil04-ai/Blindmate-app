@@ -714,8 +714,8 @@ class BlindMate {
             // Mark that speech was detected
             this.speechDetected = true;
             
-            // Only process if we have actual meaningful content and good confidence
-            if (command.length > 2 && confidence > 0.3) {
+            // Only process if we have actual meaningful content (lower confidence threshold for better recognition)
+            if (command.length > 2 && (confidence > 0.1 || confidence === undefined)) {
                 // Show command in UI
                 this.showRecognizedCommand(command);
                 
@@ -729,7 +729,13 @@ class BlindMate {
                 }
             } else {
                 console.log('Low confidence or short command received, ignoring:', command, 'Confidence:', confidence);
-                this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+                // Don't show status message for low confidence - just stay ready
+                if (confidence === 0) {
+                    // Very low confidence, likely background noise
+                    console.log('Zero confidence detected, likely background noise');
+                } else {
+                    this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
+                }
             }
         };
         
@@ -879,9 +885,30 @@ class BlindMate {
                 this.currentListeningTimeout = null;
             }
             
-            // Start command recognition
-            this.commandRecognition.lang = this.currentLanguage;
-            this.commandRecognition.start();
+            // Ensure recognition is not already running
+            if (this.commandRecognition.readyState !== undefined) {
+                // For Chrome/WebKit, check if already listening
+                try {
+                    this.commandRecognition.stop();
+                } catch (e) {
+                    // Ignore errors when stopping
+                }
+                
+                // Wait a moment before starting
+                setTimeout(() => {
+                    try {
+                        this.commandRecognition.lang = this.currentLanguage;
+                        this.commandRecognition.start();
+                    } catch (error) {
+                        console.error('Delayed start error:', error);
+                        this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
+                    }
+                }, 100);
+            } else {
+                // Start command recognition immediately
+                this.commandRecognition.lang = this.currentLanguage;
+                this.commandRecognition.start();
+            }
         } catch (error) {
             console.error('Error starting voice recognition:', error);
             this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
@@ -897,7 +924,9 @@ class BlindMate {
      * Stop voice command
      */
     stopVoiceCommand() {
-        if (this.commandRecognition && this.isListening) {
+        console.log('Stopping voice command, current state:', this.isListening);
+        
+        if (this.commandRecognition) {
             try {
                 this.commandRecognition.stop();
             } catch (error) {
@@ -916,9 +945,19 @@ class BlindMate {
             this.volumeKeyTimeout = null;
         }
         
-        // Reset state
+        // Reset state immediately
         this.isListening = false;
         this.volumeUpPressed = false;
+        this.speechDetected = false;
+        
+        // Update UI
+        if (this.elements.voiceStatus) {
+            this.elements.voiceStatus.textContent = 'Ready';
+            this.elements.voiceStatus.className = 'badge bg-secondary';
+        }
+        if (this.elements.voiceBtn) {
+            this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
+        }
     }
     
     /**
@@ -1028,11 +1067,17 @@ class BlindMate {
         const navigationKeywords = [
             'take me to', 'go to', 'navigate to', 'direction to', 'directions to',
             'route to', 'find route to', 'show route to', 'how to get to',
-            'where is', 'location of', 'find location', 'search for',
-            'navigate', 'directions', 'route', 'go'
+            'where is', 'location of', 'find location', 'search for'
         ];
         
         const lowercaseCommand = command.toLowerCase();
+        
+        // Exclude meaningless phrases from navigation detection
+        const meaninglessPhases = ['sorry', 'please try again', 'try again', 'didn\'t understand'];
+        if (meaninglessPhases.some(phrase => lowercaseCommand.includes(phrase))) {
+            return false;
+        }
+        
         return navigationKeywords.some(keyword => lowercaseCommand.includes(keyword));
     }
     
@@ -1750,8 +1795,9 @@ class BlindMate {
         // Filter out common meaningless phrases that might trigger false processing
         const meaninglessPatterns = [
             /^(um|uh|ah|er|hm|hmm|yes|yeah|no|okay|ok)$/i,
-            /^sorry i didn'?t understand/i,
+            /^sorry.*didn'?t.*understand/i,
             /^please try again/i,
+            /^try again/i,
             /^what$/i,
             /^\s*$/,  // Empty or whitespace only
             /^.{1,2}$/  // Very short commands (1-2 characters)
@@ -1794,8 +1840,8 @@ class BlindMate {
         } catch (error) {
             console.error('Error processing command:', error);
             
-            // Fallback to basic command processing
-            this.speak('Let me try to process that command locally.', true);
+            // Fallback to basic command processing without announcement
+            console.log('Using fallback processing for command:', command);
             await this.fallbackCommandProcessing(command);
         }
     }
@@ -1806,12 +1852,22 @@ class BlindMate {
     async fallbackCommandProcessing(command) {
         const cmd = command.toLowerCase();
         
-        if (cmd.includes('start') && cmd.includes('detection')) {
-            this.speak('Starting object detection', true);
-            this.startDetection();
-        } else if (cmd.includes('stop')) {
-            this.speak('Stopping detection', true);
-            this.stopDetection();
+        if ((cmd.includes('start') && cmd.includes('detection')) || cmd === 'start detection') {
+            if (!this.isDetecting) {
+                this.speak('Starting object detection', true);
+                await this.startDetection();
+                this.updateStatus('Object detection started via voice command', 'success');
+            } else {
+                this.speak('Detection is already running', true);
+            }
+        } else if (cmd.includes('stop') && !cmd.includes('navigation')) {
+            if (this.isDetecting) {
+                this.speak('Stopping detection', true);
+                this.stopDetection();
+                this.updateStatus('Object detection stopped via voice command', 'success');
+            } else {
+                this.speak('Detection is not currently running', true);
+            }
         } else if (cmd.includes('location') || cmd.includes('where am i')) {
             this.speak('Enabling location services', true);
             this.requestLocation();
