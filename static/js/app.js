@@ -714,8 +714,8 @@ class BlindMate {
             // Mark that speech was detected
             this.speechDetected = true;
             
-            // Only process if we have actual meaningful content (lower confidence threshold for better recognition)
-            if (command.length > 2 && (confidence > 0.1 || confidence === undefined)) {
+            // Process all reasonable commands - many speech recognition engines return 0 confidence
+            if (command.length > 2) {
                 // Show command in UI
                 this.showRecognizedCommand(command);
                 
@@ -723,19 +723,17 @@ class BlindMate {
                 if (this.isNavigationCommand(command)) {
                     console.log('Navigation command detected:', command);
                     this.processNavigationCommand(command);
+                } else if (command.toLowerCase().includes('start detection') || command.toLowerCase().includes('start object detection')) {
+                    // Handle start detection directly for faster response
+                    console.log('Direct start detection command:', command);
+                    await this.fallbackCommandProcessing(command);
                 } else {
                     // Process the command via Gemini for other commands
                     this.processVoiceCommand(command);
                 }
             } else {
-                console.log('Low confidence or short command received, ignoring:', command, 'Confidence:', confidence);
-                // Don't show status message for low confidence - just stay ready
-                if (confidence === 0) {
-                    // Very low confidence, likely background noise
-                    console.log('Zero confidence detected, likely background noise');
-                } else {
-                    this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
-                }
+                console.log('Short command received, ignoring:', command, 'Length:', command.length);
+                this.updateStatus('Ready for voice commands. Press Voice Command button to try again.', 'info');
             }
         };
         
@@ -746,29 +744,21 @@ class BlindMate {
             this.elements.voiceStatus.className = 'badge bg-secondary';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i> Voice Command';
             
-            // Handle different error types more gracefully
+            // Handle different error types more gracefully - don't announce every error
             if (event.error === 'not-allowed') {
                 this.updateStatus('Microphone access denied. Please allow microphone access.', 'warning');
                 this.showTextFallback();
-                this.speak('Microphone access needed. Please allow and try again.', true);
             } else if (event.error === 'no-speech') {
-                // For no-speech errors, check if any speech was actually detected
-                if (!this.speechDetected) {
-                    // No speech was detected at all - this is normal for accidental volume presses
-                    this.updateStatus('Ready for voice commands. Say "Hey BlindMate" or press Volume Up.', 'info');
-                    console.log('No speech detected - this is normal for quick volume button presses or silence');
-                } else {
-                    // Speech was detected but cut off - try again
-                    this.updateStatus('Speech was cut off. Please try again.', 'warning');
-                    this.speak('Please speak your command again', true);
-                }
+                // For no-speech errors, just stay ready without error announcements
+                this.updateStatus('Ready for voice commands. Press Voice Command button to try again.', 'info');
+                console.log('No speech detected - staying ready for next command');
             } else if (event.error === 'aborted') {
                 // Recognition was intentionally stopped, don't show error
-                this.updateStatus('Voice command cancelled.', 'info');
+                console.log('Speech recognition aborted - this is normal');
             } else {
-                // Only show error for actual problems
-                this.updateStatus('Voice recognition temporarily unavailable. Try again.', 'warning');
-                this.speak('Voice recognition issue. Please try again.', true);
+                // Other errors - just stay ready
+                this.updateStatus('Ready for voice commands. Press Voice Command button to try again.', 'info');
+                console.log('Speech recognition error handled:', event.error);
             }
         };
         
@@ -885,30 +875,26 @@ class BlindMate {
                 this.currentListeningTimeout = null;
             }
             
-            // Ensure recognition is not already running
-            if (this.commandRecognition.readyState !== undefined) {
-                // For Chrome/WebKit, check if already listening
+            // Force stop any existing recognition first
+            try {
+                this.commandRecognition.stop();
+            } catch (e) {
+                // Ignore errors when stopping
+            }
+            
+            // Wait a moment then start fresh
+            setTimeout(() => {
                 try {
-                    this.commandRecognition.stop();
-                } catch (e) {
-                    // Ignore errors when stopping
-                }
-                
-                // Wait a moment before starting
-                setTimeout(() => {
-                    try {
+                    if (!this.isListening) {  // Only start if not already listening
                         this.commandRecognition.lang = this.currentLanguage;
                         this.commandRecognition.start();
-                    } catch (error) {
-                        console.error('Delayed start error:', error);
-                        this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
+                        console.log('Speech recognition started');
                     }
-                }, 100);
-            } else {
-                // Start command recognition immediately
-                this.commandRecognition.lang = this.currentLanguage;
-                this.commandRecognition.start();
-            }
+                } catch (error) {
+                    console.error('Speech start error:', error);
+                    this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
+                }
+            }, 200);
         } catch (error) {
             console.error('Error starting voice recognition:', error);
             this.updateStatus('Voice recognition temporarily unavailable. Please try again.', 'warning');
@@ -1908,7 +1894,7 @@ class BlindMate {
                 window.location.href = '/tutorial';
             }, 2000);
         } else {
-            this.speak('I did not understand that command. Try saying start detection, stop, take me to a location, or start tutorial for help.', true);
+            this.speak('Command not recognized. Try saying start detection, navigate to a place, or tutorial for help.', true);
         }
     }
 
