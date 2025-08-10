@@ -407,16 +407,43 @@ class BlindMateNavigation {
         
         this.recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
+            
+            // Handle different error types appropriately
+            let errorMessage = 'Voice command failed. Please try again.';
+            
+            switch(event.error) {
+                case 'no-speech':
+                    errorMessage = 'No speech detected. Please try speaking again.';
+                    break;
+                case 'audio-capture':
+                    errorMessage = 'Microphone error. Please check your microphone.';
+                    break;
+                case 'not-allowed':
+                    errorMessage = 'Microphone permission denied. Please enable microphone access.';
+                    break;
+                case 'network':
+                    errorMessage = 'Network error. Please check your internet connection.';
+                    break;
+                case 'aborted':
+                    // Don't show error message for user-initiated cancellations
+                    this.currentState = 'idle';
+                    this.updateMainButton('idle');
+                    return;
+            }
+            
+            this.speak(errorMessage, 'high');
             this.currentState = 'idle';
             this.updateMainButton('idle');
-            this.updateStatusDisplay('Recognition Error', 'Please try again');
+            this.updateStatusDisplay('Ready to Navigate', 'Press the button to start voice command');
         };
         
         this.recognition.onend = () => {
+            console.log('Speech recognition ended, current state:', this.currentState);
+            
             if (this.currentState === 'listening') {
                 this.currentState = 'idle';
                 this.updateMainButton('idle');
-                this.updateStatusDisplay('Ready to Navigate', 'Press the button to start');
+                this.updateStatusDisplay('Ready to Navigate', 'Press the button to start voice command');
             }
         };
         
@@ -433,6 +460,21 @@ class BlindMateNavigation {
         
         this.confirmationRecognition.onerror = (event) => {
             console.error('Confirmation speech recognition error:', event.error);
+            
+            if (this.awaitingConfirmation) {
+                this.speak('Could not hear your response. Please say yes to start navigation or no to cancel.', 'normal');
+                
+                // Retry confirmation automatically after error
+                setTimeout(() => {
+                    if (this.awaitingConfirmation) {
+                        try {
+                            this.confirmationRecognition.start();
+                        } catch (error) {
+                            console.error('Failed to restart confirmation recognition:', error);
+                        }
+                    }
+                }, 2000);
+            }
         };
     }
     
@@ -483,12 +525,35 @@ class BlindMateNavigation {
             return;
         }
         
+        // Check if recognition is already running
+        if (this.currentState === 'listening') {
+            console.log('Voice recognition already active');
+            return;
+        }
+        
         this.currentState = 'listening';
         this.updateStatusDisplay('Listening...', 'Say your destination, for example: "Go to Central Park"');
         this.updateMainButton('listening');
         
         try {
-            this.recognition.start();
+            // Ensure previous recognition is stopped
+            if (this.recognition) {
+                this.recognition.abort();
+            }
+            
+            // Small delay to ensure clean start
+            setTimeout(() => {
+                try {
+                    this.recognition.start();
+                    console.log('Voice recognition started successfully');
+                } catch (error) {
+                    console.error('Speech recognition delayed start error:', error);
+                    this.speak('Voice recognition failed to start. Please try again.', 'high');
+                    this.currentState = 'idle';
+                    this.updateMainButton('idle');
+                }
+            }, 100);
+            
         } catch (error) {
             console.error('Speech recognition start error:', error);
             this.speak('Unable to start voice recognition. Please try again.', 'high');
@@ -581,18 +646,18 @@ class BlindMateNavigation {
             case 'navigating':
                 button.classList.add('navigating');
                 button.innerHTML = '<i class="fas fa-stop"></i> Stop Navigation';
-                // Show emergency stop button
-                const emergencyStop = document.getElementById('emergencyStop');
-                if (emergencyStop) {
-                    emergencyStop.style.display = 'block';
+                // Show navigation controls
+                const navigationControls = document.getElementById('navigationControls');
+                if (navigationControls) {
+                    navigationControls.style.display = 'block';
                 }
                 break;
             default: // idle
                 button.innerHTML = '<i class="fas fa-microphone"></i> Start Listening';
-                // Hide emergency stop button
-                const emergencyStopIdle = document.getElementById('emergencyStop');
-                if (emergencyStopIdle) {
-                    emergencyStopIdle.style.display = 'none';
+                // Hide navigation controls
+                const navigationControlsIdle = document.getElementById('navigationControls');
+                if (navigationControlsIdle) {
+                    navigationControlsIdle.style.display = 'none';
                 }
                 break;
         }
@@ -688,20 +753,40 @@ class BlindMateNavigation {
      * Extract destination from voice command
      */
     extractDestination(transcript) {
-        const text = transcript.toLowerCase();
+        const text = transcript.toLowerCase().trim();
         
-        // Common patterns for navigation commands
+        // Remove common filler words and clean up
+        const cleanText = text
+            .replace(/^(hey|hello|hi)\s+/i, '')
+            .replace(/blindmate/gi, '')
+            .replace(/please/gi, '')
+            .trim();
+        
+        // Enhanced patterns for navigation commands
         const patterns = [
-            /(?:go to|navigate to|take me to|directions to)\s+(.+)/,
-            /(?:where is|find)\s+(.+)/,
-            /(?:route to|walk to)\s+(.+)/
+            /(?:go to|navigate to|take me to|directions to|drive to|walk to)\s+(.+)/,
+            /(?:where is|find|locate)\s+(.+)/,
+            /(?:route to|path to|way to)\s+(.+)/,
+            /(?:i want to go to|i need to get to)\s+(.+)/,
+            /(?:show me the way to|help me get to)\s+(.+)/,
+            // Direct place mentions without command words
+            /^(.+)(?:\s+please)?$/
         ];
         
         for (const pattern of patterns) {
-            const match = text.match(pattern);
+            const match = cleanText.match(pattern);
             if (match && match[1]) {
-                return match[1].trim();
+                const destination = match[1].trim();
+                // Filter out very short or common non-destinations
+                if (destination.length > 2 && !['here', 'there', 'home', 'work'].includes(destination)) {
+                    return destination;
+                }
             }
+        }
+        
+        // If no pattern matched but there's text, try to use it as destination
+        if (cleanText.length > 2 && !cleanText.match(/^(yes|no|start|stop|cancel|help)$/)) {
+            return cleanText;
         }
         
         return null;
