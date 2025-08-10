@@ -2190,17 +2190,17 @@ class BlindMate {
      * Speak route overview when starting navigation
      */
     async speakRouteOverview(route, destinationName) {
-        const leg = route.legs[0];
-        const totalDistance = leg.distance.text;
-        const totalTime = leg.duration.text;
+        const routeData = route.route || route;
+        const totalDistance = routeData.distance;
+        const totalTime = routeData.duration;
         
-        this.speak(`You are ${totalDistance} from ${destinationName}. Estimated walking time: ${totalTime}`, true);
+        this.speak(`Navigation started to ${destinationName}. You are ${totalDistance} away. Estimated walking time: ${totalTime}`, true);
         
         // Speak first 2-3 steps
-        const steps = leg.steps.slice(0, 3);
+        const steps = routeData.steps ? routeData.steps.slice(0, 2) : [];
         for (let i = 0; i < steps.length; i++) {
             const step = steps[i];
-            const instruction = this.cleanHtmlInstructions(step.html_instructions);
+            const instruction = step.instruction || this.cleanHtmlInstructions(step.html_instructions || step.instruction);
             
             setTimeout(() => {
                 this.speak(`Step ${i + 1}: ${instruction}`, true);

@@ -138,12 +138,23 @@ def get_directions():
         # Check if destination is coordinates or address text
         destination_coords = destination
         if not re.match(coord_pattern, destination):
-            # Destination is text address - geocode it first
+            # Destination is text address - try to geocode it first
             logging.info(f"Geocoding destination: {destination}")
+            
+            # Try standard geocoding first
             geocoded_coords = geocode_address(destination, api_key)
-            if not geocoded_coords:
-                return jsonify({'success': False, 'message': 'Location not found, please try again.'}), 404
-            elif 'error' in geocoded_coords:
+            
+            # If geocoding fails and it's a generic term, try Places API search
+            if not geocoded_coords or 'error' in geocoded_coords:
+                logging.info(f"Standard geocoding failed, trying Places API for: {destination}")
+                places_result = find_nearby_place(destination, origin, api_key)
+                if places_result and 'lat' in places_result:
+                    geocoded_coords = places_result
+                    logging.info(f"Found place via Places API: {destination}")
+                else:
+                    return jsonify({'success': False, 'message': f'Could not find "{destination}" near your location. Please try a more specific address.'}), 404
+            
+            if 'error' in geocoded_coords:
                 return jsonify({'success': False, 'message': geocoded_coords['message']}), 404
             destination_coords = f"{geocoded_coords['lat']},{geocoded_coords['lng']}"
             logging.info(f"Geocoded '{destination}' to {destination_coords}")
@@ -208,16 +219,126 @@ def preferences():
             'tone': session.get('current_tone')
         })
 
-def geocode_address(address, api_key):
-    """Geocode address using Google Geocoding API"""
+def enhance_search_terms(address):
+    """Enhance generic search terms for better geocoding results"""
+    address_lower = address.lower().strip()
+    
+    # Add "near me" to generic terms to get local results
+    generic_terms = {
+        'library': 'library near me',
+        'hospital': 'hospital near me',
+        'school': 'school near me',
+        'restaurant': 'restaurant near me',
+        'pharmacy': 'pharmacy near me',
+        'bank': 'bank near me',
+        'grocery store': 'grocery store near me',
+        'gas station': 'gas station near me',
+        'shopping mall': 'shopping mall near me',
+        'park': 'park near me',
+        'gym': 'gym near me',
+        'university': 'university near me',
+        'college': 'college near me',
+        'airport': 'airport near me',
+        'train station': 'train station near me',
+        'bus station': 'bus station near me',
+        'hotel': 'hotel near me',
+        'cinema': 'cinema near me',
+        'movie theater': 'movie theater near me',
+        'coffee shop': 'coffee shop near me',
+        'post office': 'post office near me'
+    }
+    
+    # Check if it's a generic term
+    for term, enhanced in generic_terms.items():
+        if address_lower == term or address_lower == term + 's':
+            return enhanced
+    
+    # If it's already a specific address, return as is
+    return address
+
+def find_nearby_place(place_type, origin_coords, api_key):
+    """Find nearby places using Google Places API"""
     try:
-        url = 'https://maps.googleapis.com/maps/api/geocode/json'
+        # Extract coordinates from origin
+        origin_lat, origin_lng = map(float, origin_coords.split(','))
+        
+        # Map common terms to Google Places types
+        place_type_mapping = {
+            'library': 'library',
+            'hospital': 'hospital', 
+            'school': 'school',
+            'restaurant': 'restaurant',
+            'pharmacy': 'pharmacy',
+            'bank': 'bank',
+            'grocery store': 'grocery_or_supermarket',
+            'gas station': 'gas_station',
+            'shopping mall': 'shopping_mall',
+            'park': 'park',
+            'gym': 'gym',
+            'university': 'university',
+            'college': 'university',
+            'airport': 'airport',
+            'train station': 'train_station',
+            'bus station': 'bus_station',
+            'hotel': 'lodging',
+            'cinema': 'movie_theater',
+            'movie theater': 'movie_theater',
+            'coffee shop': 'cafe',
+            'post office': 'post_office'
+        }
+        
+        # Get the Places API type
+        search_type = place_type_mapping.get(place_type.lower(), place_type.lower())
+        
+        # Use Places API Nearby Search
+        url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
         params = {
-            'address': address,
+            'location': f"{origin_lat},{origin_lng}",
+            'radius': 5000,  # 5km radius
+            'type': search_type,
             'key': api_key
         }
         
-        logging.info(f"Geocoding address: {address}")
+        logging.info(f"Searching for nearby {search_type} at {origin_lat},{origin_lng}")
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        data = response.json()
+        status = data.get('status')
+        
+        if status == 'OK' and data.get('results'):
+            # Get the first (closest) result
+            place = data['results'][0]
+            location = place['geometry']['location']
+            place_name = place.get('name', place_type)
+            
+            logging.info(f"Found nearby {place_type}: {place_name}")
+            return {
+                'lat': location['lat'],
+                'lng': location['lng'],
+                'name': place_name
+            }
+        else:
+            logging.warning(f"No nearby {place_type} found via Places API")
+            return None
+            
+    except Exception as e:
+        logging.error(f"Error finding nearby place: {e}")
+        return None
+
+def geocode_address(address, api_key):
+    """Geocode address using Google Geocoding API with enhanced search"""
+    try:
+        # Enhance generic search terms for better geocoding results
+        enhanced_address = enhance_search_terms(address)
+        
+        url = 'https://maps.googleapis.com/maps/api/geocode/json'
+        params = {
+            'address': enhanced_address,
+            'key': api_key
+        }
+        
+        logging.info(f"Geocoding address: {address} (enhanced: {enhanced_address})")
         response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         
