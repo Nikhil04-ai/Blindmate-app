@@ -62,19 +62,6 @@ class BlindMate {
         this.locationWatcher = null;
         this.routeDeviationThreshold = 15; // meters
         
-        // Predefined locations (no database needed) + localStorage support
-        this.locations = {
-            'library': { lat: 26.4011, lng: 80.3023, name: 'Library' },
-            'stairs': { lat: 26.4004, lng: 80.3018, name: 'Stairs' },
-            'canteen': { lat: 26.3995, lng: 80.2997, name: 'Canteen' },
-            'entrance': { lat: 26.4015, lng: 80.3025, name: 'Main Entrance' },
-            'bathroom': { lat: 26.4008, lng: 80.3015, name: 'Bathroom' },
-            'office': { lat: 26.4012, lng: 80.3020, name: 'Office' }
-        };
-        
-        // Load saved locations from localStorage
-        this.loadSavedLocations();
-        
         // Wake word detection
         this.isListeningForWakeWord = true;
         this.wakeWords = ['hey blindmate', 'hey blind mate', 'blindmate'];
@@ -87,66 +74,7 @@ class BlindMate {
         this.init();
     }
 
-    /**
-     * Load saved locations from localStorage
-     */
-    loadSavedLocations() {
-        try {
-            const savedLocations = localStorage.getItem('blindmate_locations');
-            if (savedLocations) {
-                const parsed = JSON.parse(savedLocations);
-                Object.assign(this.locations, parsed);
-                console.log('Loaded saved locations:', Object.keys(parsed));
-            }
-        } catch (error) {
-            console.warn('Failed to load saved locations:', error);
-        }
-    }
 
-    /**
-     * Save a new location to localStorage
-     */
-    async saveLocation(locationName, coordinates = null) {
-        try {
-            let coords = coordinates;
-            if (!coords) {
-                coords = await this.getCurrentPosition();
-            }
-            
-            // Add to locations object
-            this.locations[locationName.toLowerCase()] = {
-                lat: coords.lat,
-                lng: coords.lng,
-                name: locationName
-            };
-            
-            // Get existing saved locations
-            let savedLocations = {};
-            try {
-                const existing = localStorage.getItem('blindmate_locations');
-                if (existing) {
-                    savedLocations = JSON.parse(existing);
-                }
-            } catch (e) {
-                console.warn('Failed to parse existing locations');
-            }
-            
-            // Add new location to saved locations
-            savedLocations[locationName.toLowerCase()] = this.locations[locationName.toLowerCase()];
-            
-            // Save to localStorage
-            localStorage.setItem('blindmate_locations', JSON.stringify(savedLocations));
-            
-            this.updateActionStatus(`Location "${locationName}" saved successfully`);
-            this.speak(`Location ${locationName} has been saved`);
-            
-            return true;
-        } catch (error) {
-            console.error('Failed to save location:', error);
-            this.showError('Failed to save location. Please enable location access.');
-            return false;
-        }
-    }
 
     /**
      * Get current position with error handling
@@ -343,25 +271,9 @@ class BlindMate {
      * Get location coordinates (supports both hardcoded and saved locations)
      */
     getLocationCoordinates(destinationName) {
-        const destKey = destinationName.toLowerCase().trim();
-        
-        // Check hardcoded locations first
-        let location = this.locations[destKey];
-        
-        // Try fuzzy matching for common variations
-        if (!location) {
-            const locationKeys = Object.keys(this.locations);
-            const match = locationKeys.find(key => 
-                key.includes(destKey) || 
-                destKey.includes(key) ||
-                this.locations[key].name.toLowerCase().includes(destKey)
-            );
-            if (match) {
-                location = this.locations[match];
-            }
-        }
-        
-        return location;
+        // This function is deprecated - all destinations now go through Google Geocoding API
+        // Return null to force use of the enhanced navigation system
+        return null;
     }
 
     /**
@@ -1342,7 +1254,7 @@ class BlindMate {
                 this.speak(`Navigating to ${destination}`, true);
                 await this.navigateToLocation(destination);
             } else {
-                this.speak('Where would you like to go? Available locations are: library, stairs, canteen, entrance, bathroom, office', true);
+                this.speak('Where would you like to go? Please say the name of any place, landmark, or address.', true);
             }
         } else if (cmd.includes('preview') || cmd.includes('route to')) {
             // Extract destination for route preview
@@ -1405,18 +1317,18 @@ class BlindMate {
                 break;
                 
             case 'navigate':
-                console.log('Gemini navigate action:', destination);
-                if (destination) {
-                    await this.navigateToLocation(destination);
+                console.log('Gemini navigate action:', result.destination);
+                if (result.destination) {
+                    await this.navigateToLocation(result.destination);
                 } else {
-                    this.speak('I need a destination to navigate to. Available locations are: library, stairs, canteen, entrance, bathroom, office', true);
+                    this.speak('I need a destination to navigate to. Please say the name of any place, landmark, or address.', true);
                 }
                 break;
                 
             case 'preview_route':
-                console.log('Gemini preview action:', destination);
-                if (destination) {
-                    await this.previewRoute(destination);
+                console.log('Gemini preview action:', result.destination);
+                if (result.destination) {
+                    await this.previewRoute(result.destination);
                 } else {
                     this.speak('I need a destination to preview the route', true);
                 }
@@ -1456,7 +1368,7 @@ class BlindMate {
     }
 
     /**
-     * Navigate to a predefined location
+     * Navigate to any worldwide destination using Google APIs
      */
     async navigateToLocation(destination) {
         console.log('navigateToLocation called with:', destination);
@@ -1469,81 +1381,62 @@ class BlindMate {
             }
         }
         
-        // Normalize destination name and try different variations
-        const destKey = destination.toLowerCase().trim();
-        console.log('Looking for location:', destKey);
-        console.log('Available locations:', Object.keys(this.locations));
-        
-        let location = this.locations[destKey];
-        
-        // Try fuzzy matching for common variations
-        if (!location) {
-            const locationKeys = Object.keys(this.locations);
-            const match = locationKeys.find(key => 
-                key.includes(destKey) || 
-                destKey.includes(key) ||
-                this.locations[key].name.toLowerCase().includes(destKey)
-            );
-            if (match) {
-                location = this.locations[match];
-                console.log('Found fuzzy match:', match, location);
-            }
-        }
-        
-        if (!location) {
-            const availableLocations = Object.keys(this.locations).join(', ');
-            this.speak(`I don't know that location. Available locations are: ${availableLocations}`, true);
-            console.log('No location found for:', destKey);
-            return;
-        }
-        
         try {
-            this.updateStatus(`Getting directions to ${location.name}...`, 'primary');
-            this.speak(`Getting directions to ${location.name}`, true);
+            this.updateStatus(`Getting directions to ${destination}...`, 'primary');
+            this.speak(`Getting directions to ${destination}`, true);
             
             console.log('User location:', this.userLocation);
-            console.log('Destination:', location);
+            console.log('Destination:', destination);
             
-            // Get directions from Google Maps API
-            const route = await this.getDirections(
-                this.userLocation.latitude, 
-                this.userLocation.longitude,
-                location.lat,
-                location.lng
-            );
-            
-            console.log('Route received:', route);
-            
-            if (route) {
-                this.currentRoute = route;
-                this.currentStepIndex = 0;
-                this.isNavigating = true;
-                
-                // Update navigation status
-                if (this.elements.navigationStatus) {
-                    this.elements.navigationStatus.textContent = 'Navigating';
-                    this.elements.navigationStatus.className = 'badge bg-success';
-                }
-                
-                // Speak route overview
-                await this.speakRouteOverview(route, location.name);
-                
-                // Start position tracking for rerouting
-                this.startLocationTracking();
-                
-                this.updateStatus(`Navigating to ${location.name}`, 'success');
+            // Use the enhanced navigation system that handles geocoding + directions
+            if (window.blindMateNavigation) {
+                // Use the enhanced navigation system
+                window.blindMateNavigation.currentDestination = destination;
+                await window.blindMateNavigation.startNavigation(destination);
             } else {
-                this.speak(`Could not get directions to ${location.name}. Please try again.`, true);
+                // Fallback to direct API call
+                const response = await fetch('/api/directions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        origin: `${this.userLocation.latitude},${this.userLocation.longitude}`,
+                        destination: destination
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.currentRoute = data;
+                    this.currentStepIndex = 0;
+                    this.isNavigating = true;
+                    
+                    // Update navigation status
+                    if (this.elements.navigationStatus) {
+                        this.elements.navigationStatus.textContent = 'Navigating';
+                        this.elements.navigationStatus.className = 'badge bg-success';
+                    }
+                    
+                    // Speak route overview
+                    await this.speakRouteOverview(data, destination);
+                    
+                    // Start position tracking for rerouting
+                    this.startLocationTracking();
+                    
+                    this.updateStatus(`Navigating to ${destination}`, 'success');
+                } else {
+                    this.speak(data.message || `Could not get directions to ${destination}. Please try again.`, true);
+                }
             }
             
         } catch (error) {
             console.error('Navigation error:', error);
-            this.speak(`Sorry, I couldn't get directions to ${location.name}. Please try again.`, true);
+            this.speak(`Sorry, I couldn't get directions to ${destination}. Please try again.`, true);
         }
     }
     
     /**
-     * Preview route to destination without starting navigation
+     * Preview route to any destination without starting navigation
      */
     async previewRoute(destination) {
         console.log('previewRoute called with:', destination);
@@ -1556,47 +1449,31 @@ class BlindMate {
             }
         }
         
-        // Normalize destination name and try different variations
-        const destKey = destination.toLowerCase().trim();
-        let location = this.locations[destKey];
-        
-        // Try fuzzy matching for common variations
-        if (!location) {
-            const locationKeys = Object.keys(this.locations);
-            const match = locationKeys.find(key => 
-                key.includes(destKey) || 
-                destKey.includes(key) ||
-                this.locations[key].name.toLowerCase().includes(destKey)
-            );
-            if (match) {
-                location = this.locations[match];
-            }
-        }
-        
-        if (!location) {
-            const availableLocations = Object.keys(this.locations).join(', ');
-            this.speak(`I don't know that location. Available locations are: ${availableLocations}`, true);
-            return;
-        }
-        
         try {
-            this.updateStatus(`Previewing route to ${location.name}...`, 'primary');
+            this.updateStatus(`Previewing route to ${destination}...`, 'primary');
             
-            const route = await this.getDirections(
-                this.userLocation.latitude,
-                this.userLocation.longitude, 
-                location.lat,
-                location.lng
-            );
+            // Use the enhanced navigation system for route preview
+            const response = await fetch('/api/directions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    origin: `${this.userLocation.latitude},${this.userLocation.longitude}`,
+                    destination: destination
+                })
+            });
             
-            if (route) {
-                await this.speakRoutePreview(route, location.name);
-                this.updateStatus(`Route preview completed for ${location.name}`, 'success');
+            const data = await response.json();
+            
+            if (data.success) {
+                await this.speakRoutePreview(data, destination);
+                this.updateStatus(`Route preview completed for ${destination}`, 'success');
+            } else {
+                this.speak(data.message || `Could not get route preview to ${destination}. Please try again.`, true);
             }
             
         } catch (error) {
             console.error('Route preview error:', error);
-            this.speak(`Sorry, I couldn't preview the route to ${location.name}`, true);
+            this.speak(`Sorry, I couldn't preview the route to ${destination}`, true);
         }
     }
     
