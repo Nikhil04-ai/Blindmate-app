@@ -80,6 +80,12 @@ class BlindMate {
         this.volumeUpPressed = false;
         this.volumeKeyTimeout = null;
         
+        // Mobile double-tap gesture detection
+        this.lastTapTime = 0;
+        this.tapTimeout = null;
+        this.doubleTapDelay = 300; // milliseconds between taps
+        this.isMobileDevice = this.detectMobileDevice();
+        
         this.init();
     }
 
@@ -395,6 +401,114 @@ class BlindMate {
         statusDiv.textContent = 'System ready';
         return statusDiv;
     }
+
+    /**
+     * Detect if device is mobile
+     */
+    detectMobileDevice() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+               ('ontouchstart' in window) || 
+               (navigator.maxTouchPoints > 0);
+    }
+
+    /**
+     * Setup mobile double-tap gesture detection
+     */
+    setupMobileDoubleTap() {
+        let touchStartTime = 0;
+        
+        // Add touch event listener to entire document for full-screen double-tap
+        document.addEventListener('touchstart', (e) => {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - touchStartTime;
+            
+            // Prevent interference with UI elements that need single taps
+            const target = e.target;
+            const isUIElement = target.tagName === 'BUTTON' || 
+                              target.tagName === 'SELECT' || 
+                              target.closest('button') || 
+                              target.closest('select') ||
+                              target.closest('.btn') ||
+                              target.id.includes('Btn') ||
+                              target.className.includes('btn');
+            
+            // Skip double-tap detection on UI elements
+            if (isUIElement) {
+                return;
+            }
+            
+            // Double-tap detection logic
+            if (tapLength < this.doubleTapDelay && tapLength > 0) {
+                // Double-tap detected!
+                e.preventDefault(); // Prevent default zoom behavior
+                
+                console.log('Double-tap detected on mobile - starting voice command');
+                this.speak('Listening started');
+                
+                // Call the same function as voice command button
+                this.startVoiceCommand();
+                
+                // Reset tap timing
+                touchStartTime = 0;
+            } else {
+                // Single tap or first tap of potential double-tap
+                touchStartTime = currentTime;
+            }
+        }, { passive: false });
+        
+        console.log('Mobile double-tap gesture enabled for voice commands');
+        
+        // Add visual hint for mobile users
+        this.addMobileHint();
+    }
+
+    /**
+     * Add visual hint for mobile double-tap feature
+     */
+    addMobileHint() {
+        // Create hint element
+        const hintElement = document.createElement('div');
+        hintElement.id = 'mobileHint';
+        hintElement.className = 'alert alert-info mobile-hint';
+        hintElement.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(0, 123, 255, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            text-align: center;
+            animation: fadeInOut 4s ease-in-out;
+            pointer-events: none;
+        `;
+        hintElement.innerHTML = '💡 Double-tap anywhere to start voice commands';
+        
+        // Add CSS animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fadeInOut {
+                0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+                15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+                85% { opacity: 1; transform: translateX(-50%) translateY(0); }
+                100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Add to page
+        document.body.appendChild(hintElement);
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (hintElement.parentNode) {
+                hintElement.parentNode.removeChild(hintElement);
+            }
+        }, 4000);
+    }
     
     /**
      * Create navigation status element if it doesn't exist
@@ -429,6 +543,11 @@ class BlindMate {
         }
         if (this.elements.toneSelect) {
             this.elements.toneSelect.addEventListener('change', (e) => this.changeTone(e.target.value));
+        }
+        
+        // Mobile double-tap gesture for voice commands
+        if (this.isMobileDevice) {
+            this.setupMobileDoubleTap();
         }
         
         // Keyboard shortcuts for accessibility and volume key detection

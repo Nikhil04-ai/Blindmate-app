@@ -51,6 +51,21 @@ BlindMate is an advanced web-based assistive technology application designed to 
 10. **Permission Management**: Requests camera, microphone, and location access on load
 
 ## Recent Changes
+- **2025-08-10**: Smart Object Detection Announcement System & Mobile Double-Tap Feature
+  - **IMPLEMENTED Smart Object Detection** with 3-announcement limit per object type
+  - **ADDED 7-second cooldown** for object re-announcement after disappearance
+  - **ENHANCED object tracking** with Maps for announcement count, last seen time, and disappearance tracking
+  - **CREATED multi-object support** where each object type is tracked independently (person, chair, car can each be announced 3 times)
+  - **ADDED debug logging** for monitoring smart announcement system behavior
+  - **IMPLEMENTED mobile double-tap gesture** for voice command activation on touch devices
+  - **ADDED mobile device detection** and full-screen double-tap listening mode
+  - **ENHANCED mobile accessibility** with "Listening started" voice feedback
+  - **PREVENTED UI interference** by excluding buttons/selects from double-tap detection
+  - **MAINTAINED all existing features** including language/tone customization, navigation, and object detection
+  - Mobile users can now double-tap anywhere on screen to activate voice commands
+  - Desktop users continue using volume keys and voice command button as before
+  - Object announcements are now intelligently limited to prevent repetitive notifications
+
 - **2025-08-10**: Complete Universal Navigation Implementation
   - **REMOVED all OpenRouteService (ORS) code** from backend and frontend
   - **REPLACED with Google Directions API and Google Geocoding API only**
