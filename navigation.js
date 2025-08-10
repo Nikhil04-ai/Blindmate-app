@@ -42,6 +42,13 @@ class BlindMateNavigation {
         this.detectionContext = null;
         this.obstacleDetectionEnabled = false;
         
+        // Google Maps integration
+        this.map = null;
+        this.directionsService = null;
+        this.directionsRenderer = null;
+        this.userMarker = null;
+        this.routePolyline = null;
+        
         // Speech recognition and synthesis with queue management
         this.recognition = null;
         this.confirmationRecognition = null;
@@ -83,6 +90,202 @@ class BlindMateNavigation {
         await this.loadModel();
         
         console.log('BlindMate Navigation System initialized');
+    }
+    
+    /**
+     * Initialize Google Maps for navigation display
+     */
+    initializeMap() {
+        if (!window.google || !window.google.maps) {
+            console.error('Google Maps API not loaded');
+            return;
+        }
+        
+        console.log('Initializing Google Maps...');
+        
+        // Initialize map centered on user's location or default
+        const defaultCenter = this.currentPosition ? 
+            { lat: this.currentPosition.latitude, lng: this.currentPosition.longitude } :
+            { lat: 28.6139, lng: 77.2090 }; // Default to Delhi
+        
+        this.map = new google.maps.Map(document.getElementById('map'), {
+            zoom: 16,
+            center: defaultCenter,
+            mapTypeId: google.maps.MapTypeId.ROADMAP,
+            streetViewControl: false,
+            fullscreenControl: false,
+            mapTypeControl: false,
+            zoomControl: true,
+            styles: [
+                {
+                    featureType: 'poi',
+                    elementType: 'labels',
+                    stylers: [{ visibility: 'off' }]
+                }
+            ]
+        });
+        
+        // Initialize directions service and renderer
+        this.directionsService = new google.maps.DirectionsService();
+        this.directionsRenderer = new google.maps.DirectionsRenderer({
+            map: this.map,
+            draggable: false,
+            panel: null,
+            suppressMarkers: false,
+            polylineOptions: {
+                strokeColor: '#007bff',
+                strokeWeight: 6,
+                strokeOpacity: 0.8
+            }
+        });
+        
+        // Add user location marker
+        if (this.currentPosition) {
+            this.userMarker = new google.maps.Marker({
+                position: { lat: this.currentPosition.latitude, lng: this.currentPosition.longitude },
+                map: this.map,
+                title: 'Your Location',
+                icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#007bff">
+                            <circle cx="12" cy="12" r="8" stroke="white" stroke-width="2"/>
+                        </svg>
+                    `),
+                    scaledSize: new google.maps.Size(24, 24),
+                    anchor: new google.maps.Point(12, 12)
+                }
+            });
+        }
+        
+        // Setup map controls
+        this.setupMapControls();
+        
+        console.log('Google Maps initialized successfully');
+    }
+    
+    /**
+     * Setup map control buttons
+     */
+    setupMapControls() {
+        const closeMapBtn = document.getElementById('closeMap');
+        const showMapBtn = document.getElementById('showMap');
+        const mapContainer = document.getElementById('navigationMapContainer');
+        
+        if (closeMapBtn) {
+            closeMapBtn.addEventListener('click', () => {
+                mapContainer.style.display = 'none';
+            });
+        }
+        
+        if (showMapBtn) {
+            showMapBtn.addEventListener('click', () => {
+                if (this.isNavigating) {
+                    mapContainer.style.display = 'block';
+                    // Resize map after showing
+                    setTimeout(() => {
+                        if (this.map) {
+                            google.maps.event.trigger(this.map, 'resize');
+                        }
+                    }, 100);
+                } else {
+                    this.speak('Navigation is not active. Start navigation to view the route.', 'normal');
+                }
+            });
+        }
+    }
+    
+    /**
+     * Display route on Google Maps
+     */
+    displayRouteOnMap(route) {
+        if (!this.map || !this.directionsRenderer) {
+            console.log('Map not initialized, cannot display route');
+            return;
+        }
+        
+        console.log('Displaying route on map');
+        
+        // Clear existing route
+        this.directionsRenderer.setDirections(null);
+        
+        // Get origin and destination from route steps
+        const steps = route.steps;
+        if (!steps || steps.length === 0) return;
+        
+        const origin = new google.maps.LatLng(
+            this.currentPosition.latitude,
+            this.currentPosition.longitude
+        );
+        
+        const destination = new google.maps.LatLng(
+            steps[steps.length - 1].end_location.lat,
+            steps[steps.length - 1].end_location.lng
+        );
+        
+        // Create DirectionsRequest
+        const request = {
+            origin: origin,
+            destination: destination,
+            travelMode: google.maps.TravelMode.WALKING,
+            unitSystem: google.maps.UnitSystem.METRIC,
+            avoidHighways: true,
+            avoidTolls: true
+        };
+        
+        // Request and display directions
+        this.directionsService.route(request, (result, status) => {
+            if (status === google.maps.DirectionsStatus.OK) {
+                this.directionsRenderer.setDirections(result);
+                console.log('Route displayed on map successfully');
+                
+                // Update map bounds to show entire route
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend(origin);
+                bounds.extend(destination);
+                this.map.fitBounds(bounds);
+                
+                // Add some padding
+                setTimeout(() => {
+                    this.map.setZoom(Math.max(this.map.getZoom() - 1, 14));
+                }, 500);
+            } else {
+                console.error('Failed to display route on map:', status);
+            }
+        });
+    }
+    
+    /**
+     * Update user marker position during navigation
+     */
+    updateUserMarkerPosition(lat, lng) {
+        if (!this.map) return;
+        
+        const newPosition = new google.maps.LatLng(lat, lng);
+        
+        if (this.userMarker) {
+            this.userMarker.setPosition(newPosition);
+        } else {
+            // Create user marker if it doesn't exist
+            this.userMarker = new google.maps.Marker({
+                position: newPosition,
+                map: this.map,
+                title: 'Your Location',
+                icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#007bff">
+                            <circle cx="12" cy="12" r="8" stroke="white" stroke-width="2"/>
+                        </svg>
+                    `),
+                    scaledSize: new google.maps.Size(24, 24),
+                    anchor: new google.maps.Point(12, 12)
+                }
+            });
+        }
+        
+        // Center map on user location during navigation
+        if (this.isNavigating) {
+            this.map.panTo(newPosition);
+        }
     }
     
     /**
@@ -515,8 +718,8 @@ class BlindMateNavigation {
             this.rerouteAttempts = 0;
             this.nextStepAnnounced = false;
             
-            // Get route from server
-            const response = await fetch('/api/directions', {
+            // Get route from server using Google Directions API
+            const response = await fetch('/api/navigate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -549,6 +752,9 @@ class BlindMateNavigation {
             
             this.currentRoute = data.route;
             
+            // Display route on map
+            this.displayRouteOnMap(data.route);
+            
             // Start GPS tracking with watchPosition - KEY REQUIREMENT
             this.startLocationTracking();
             
@@ -561,9 +767,20 @@ class BlindMateNavigation {
             // Update main button to show navigation state
             this.updateMainButton('navigating');
             
+            // Show map automatically when navigation starts
+            setTimeout(() => {
+                const mapContainer = document.getElementById('navigationMapContainer');
+                if (mapContainer && this.map) {
+                    mapContainer.style.display = 'block';
+                    setTimeout(() => {
+                        google.maps.event.trigger(this.map, 'resize');
+                    }, 100);
+                }
+            }, 1000);
+            
             // Announce first step
             const firstStep = this.currentRoute.steps[0];
-            this.speak(`Navigation started to ${destination}. ${firstStep.instruction}`, 'high');
+            this.speak(`Navigation started to ${destination}. Total distance: ${this.currentRoute.distance}, estimated time: ${this.currentRoute.duration}. ${firstStep.instruction}`, 'high');
             
             console.log('Navigation started successfully');
             
@@ -605,6 +822,9 @@ class BlindMateNavigation {
     handleLocationUpdate(position) {
         this.currentPosition = position.coords;
         this.positionAccuracy = position.coords.accuracy;
+        
+        // Update user marker on map with new position
+        this.updateUserMarkerPosition(position.coords.latitude, position.coords.longitude);
         
         if (!this.isNavigating || !this.currentRoute) {
             return;

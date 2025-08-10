@@ -118,9 +118,9 @@ def process_command():
         logging.error(f"Error processing command: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/directions', methods=['POST'])
-def get_directions():
-    """Get walking directions from OpenRouteService API"""
+@app.route('/api/navigate', methods=['POST'])
+def navigate():
+    """Get walking directions using Google Directions API for voice navigation"""
     try:
         data = request.get_json()
         
@@ -130,18 +130,13 @@ def get_directions():
         origin = data['origin']
         destination = data['destination']
         
-        # Get ORS API key from environment
-        api_key = os.environ.get('ORS_API_KEY')
+        # Get Google API key from environment
+        api_key = os.environ.get('GOOGLE_DIRECTIONS_API_KEY')
         if not api_key:
-            logging.error("ORS_API_KEY not found in environment variables")
-            return jsonify({'error': 'OpenRouteService API key not configured'}), 500
+            logging.error("GOOGLE_DIRECTIONS_API_KEY not found in environment variables")
+            return jsonify({'error': 'Navigation service API key not configured'}), 500
         
-        # First, geocode the destination if it's not coordinates
-        destination_coords = await_geocode_location(destination, api_key)
-        if not destination_coords:
-            return jsonify({'error': 'Location not found'}), 404
-        
-        # Validate origin coordinates format with regex
+        # Validate origin coordinates format
         import re
         coord_pattern = r'^-?\d+\.?\d*,-?\d+\.?\d*$'
         if not re.match(coord_pattern, origin):
@@ -155,195 +150,150 @@ def get_directions():
         except ValueError:
             return jsonify({'error': 'Invalid origin coordinates format'}), 400
         
-        # Get walking directions from ORS
-        directions_data = await_get_ors_directions(
-            [origin_lng, origin_lat], 
-            destination_coords, 
-            api_key
-        )
+        # Get walking directions from Google Directions API
+        directions_data = get_google_directions(origin, destination, api_key)
         
         if not directions_data:
-            return jsonify({'error': 'No route found'}), 404
+            return jsonify({'error': 'I could not find that location'}), 404
         
-        # Parse and clean the directions
+        # Parse and format the directions for voice navigation
         try:
-            cleaned_directions = parse_ors_directions(directions_data, destination)
+            navigation_data = parse_google_directions(directions_data, destination)
         except Exception as parse_error:
-            logging.error(f"Error parsing ORS directions: {parse_error}")
-            logging.error(f"Directions data type: {type(directions_data)}")
-            logging.error(f"Directions data: {directions_data}")
+            logging.error(f"Error parsing Google directions: {parse_error}")
             return jsonify({'error': 'Failed to parse navigation data'}), 500
         
-        logging.info(f"Successfully got ORS directions with {len(cleaned_directions.get('route', {}).get('steps', []))} steps")
+        logging.info(f"Successfully got Google directions with {len(navigation_data.get('route', {}).get('steps', []))} steps")
         
-        return jsonify(cleaned_directions)
+        return jsonify(navigation_data)
         
     except requests.exceptions.Timeout:
-        logging.error("ORS API timeout")
-        return jsonify({'error': 'Navigation request timed out. Please try again.'}), 504
+        logging.error("Google Directions API timeout")
+        return jsonify({'error': 'Navigation service is unavailable right now'}), 504
     except requests.exceptions.RequestException as e:
         logging.error(f"HTTP error getting directions: {e}")
-        return jsonify({'error': 'Unable to connect to navigation service'}), 503
+        return jsonify({'error': 'Navigation service is unavailable right now'}), 503
     except Exception as e:
         logging.error(f"Error getting directions: {e}")
-        return jsonify({'error': 'Directions request failed'}), 500
+        return jsonify({'error': 'Navigation service is unavailable right now'}), 500
 
-def await_geocode_location(location_name, api_key):
-    """Geocode location name using OpenRouteService"""
+@app.route('/api/directions', methods=['POST'])
+def get_directions():
+    """Legacy endpoint - redirects to new navigate endpoint"""
+    return navigate()
+
+@app.route('/api/google-maps-key', methods=['GET'])
+def get_google_maps_key():
+    """Get Google Maps API key for frontend"""
+    api_key = os.environ.get('GOOGLE_DIRECTIONS_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'Google Maps API key not configured'}), 500
+    return jsonify({'key': api_key})
+
+def get_google_directions(origin, destination, api_key):
+    """Get walking directions from Google Directions API"""
     try:
-        url = 'https://api.openrouteservice.org/geocode/search'
-        headers = {
-            'Authorization': api_key,
-            'Content-Type': 'application/json'
-        }
+        url = 'https://maps.googleapis.com/maps/api/directions/json'
         params = {
-            'text': location_name,
-            'size': 1  # We only need the best match
-        }
-        
-        logging.info(f"Geocoding location: {location_name}")
-        response = requests.get(url, headers=headers, params=params, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
-        if data.get('features') and len(data['features']) > 0:
-            coords = data['features'][0]['geometry']['coordinates']
-            logging.info(f"Geocoded {location_name} to {coords}")
-            return coords  # [lng, lat]
-        
-        # If no results, try with country appended
-        logging.info(f"No results for {location_name}, trying with country")
-        params['text'] = f"{location_name}, India"  # Default to India, can be made configurable
-        
-        response2 = requests.get(url, headers=headers, params=params, timeout=30)
-        response2.raise_for_status()
-        
-        data2 = response2.json()
-        if data2.get('features') and len(data2['features']) > 0:
-            coords = data2['features'][0]['geometry']['coordinates']
-            logging.info(f"Geocoded {location_name} with country to {coords}")
-            return coords  # [lng, lat]
-        
-        return None
-        
-    except requests.exceptions.Timeout:
-        logging.error(f"Geocoding timeout for {location_name}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"HTTP error geocoding {location_name}: {e}")
-        return None
-    except Exception as e:
-        logging.error(f"Geocoding error for {location_name}: {e}")
-        return None
-
-def await_get_ors_directions(start_coords, end_coords, api_key):
-    """Get walking directions from OpenRouteService"""
-    try:
-        url = 'https://api.openrouteservice.org/v2/directions/foot-walking'
-        headers = {
-            'Authorization': api_key,
-            'Content-Type': 'application/json'
-        }
-        
-        body = {
-            'coordinates': [start_coords, end_coords],
-            'format': 'json',
-            'units': 'm',
+            'origin': origin,
+            'destination': destination,
+            'mode': 'walking',
+            'units': 'metric',
             'language': 'en',
-            'geometry': 'true',
-            'instructions': 'true'
+            'key': api_key
         }
         
-        logging.info(f"Getting ORS directions from {start_coords} to {end_coords}")
-        response = requests.post(url, headers=headers, json=body, timeout=30)
+        logging.info(f"Getting Google directions from {origin} to {destination}")
+        response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         
         # Parse response safely
         try:
             data = response.json()
         except Exception as e:
-            logging.error(f"Failed to parse ORS response as JSON: {e}")
+            logging.error(f"Failed to parse Google response as JSON: {e}")
             logging.error(f"Response content: {response.text[:500]}")
             return None
         
-        # Check for ORS API errors
-        if 'error' in data:
-            logging.error(f"ORS API error: {data['error']}")
-            return None
+        # Check for Google API errors
+        if data.get('status') != 'OK':
+            logging.error(f"Google Directions API error: {data.get('status')}")
+            if data.get('status') == 'ZERO_RESULTS':
+                return None
+            elif data.get('status') == 'NOT_FOUND':
+                return None
+            else:
+                logging.error(f"Google API error details: {data.get('error_message', 'Unknown error')}")
+                return None
         
-        # Validate ORS response structure
+        # Validate Google response structure
         if not data.get('routes') or len(data['routes']) == 0:
-            logging.error("ORS returned no routes")
+            logging.error("Google returned no routes")
             return None
             
         route = data['routes'][0]
-        if not route.get('segments') or len(route['segments']) == 0:
-            logging.error("ORS route has no segments")
+        if not route.get('legs') or len(route['legs']) == 0:
+            logging.error("Google route has no legs")
             return None
             
         return data
         
     except requests.exceptions.Timeout:
-        logging.error("ORS directions API timeout")
+        logging.error("Google Directions API timeout")
         return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"HTTP error getting ORS directions: {e}")
+        logging.error(f"HTTP error getting Google directions: {e}")
         return None
     except Exception as e:
-        logging.error(f"ORS directions error: {e}")
+        logging.error(f"Google directions error: {e}")
         return None
 
-def parse_ors_directions(directions_data, destination_name):
-    """Parse OpenRouteService directions response with robust error handling"""
+def parse_google_directions(directions_data, destination_name):
+    """Parse Google Directions API response for voice navigation"""
     try:
         # Validate main structure
         if not directions_data.get('routes') or len(directions_data['routes']) == 0:
-            raise ValueError("No routes in ORS response")
+            raise ValueError("No routes in Google response")
             
         route = directions_data['routes'][0]
         
-        # Validate route structure
-        summary = route.get('summary', {})
-        segments = route.get('segments', [])
+        # Get route legs (Google uses legs instead of segments)
+        legs = route.get('legs', [])
+        if not legs:
+            raise ValueError("Missing route legs")
         
-        if not summary:
-            raise ValueError("Missing route summary")
-        if not segments:
-            raise ValueError("Missing route segments")
+        # Calculate total distance and duration from all legs
+        total_distance_m = 0
+        total_duration_s = 0
         
-        # Extract overall route info with defaults
-        total_distance_m = summary.get('distance', 0)
-        total_duration_s = summary.get('duration', 0)
-        
-        # Format distance and duration
-        total_distance = f"{total_distance_m:.0f} m" if total_distance_m < 1000 else f"{total_distance_m/1000:.1f} km"
-        total_duration = f"{total_duration_s//60:.0f} min" if total_duration_s >= 60 else f"{total_duration_s:.0f} sec"
-        
-        # Parse each step with error handling
+        # Parse each step from all legs
         steps = []
         step_number = 1
         
-        # ORS returns geometry as encoded polyline string, not coordinates array
-        # We'll use simple fallback coordinates since way_points reference the polyline
-        geometry_coords = []
-        
-        for segment in segments:
-            segment_steps = segment.get('steps', [])
+        for leg in legs:
+            # Add leg distance and duration to totals
+            total_distance_m += leg.get('distance', {}).get('value', 0)
+            total_duration_s += leg.get('duration', {}).get('value', 0)
             
-            for step in segment_steps:
-                # Clean and format instruction
-                instruction = step.get('instruction', 'Continue straight')
-                distance_m = step.get('distance', 0)
-                duration_s = step.get('duration', 0)
+            # Get steps from this leg
+            leg_steps = leg.get('steps', [])
+            
+            for step in leg_steps:
+                # Extract step information
+                distance_m = step.get('distance', {}).get('value', 0)
+                duration_s = step.get('duration', {}).get('value', 0)
+                html_instruction = step.get('html_instructions', 'Continue straight')
+                
+                # Clean HTML tags from instruction
+                instruction = clean_html_instruction(html_instruction)
                 
                 # Format step distance and duration
                 step_distance = f"{distance_m:.0f} m" if distance_m < 1000 else f"{distance_m/1000:.1f} km"
                 step_duration = f"{duration_s//60:.0f} min" if duration_s >= 60 else f"{duration_s:.0f} sec"
                 
-                # For now, use simple placeholder coordinates since polyline decoding is complex
-                # This allows navigation instructions to work while coordinates are simplified
-                start_coord = [0, 0]  # Will be filled by frontend GPS
-                end_coord = [0, 0]    # Will be filled by frontend GPS
+                # Get start and end coordinates
+                start_location = step.get('start_location', {})
+                end_location = step.get('end_location', {})
                 
                 step_data = {
                     'step_number': step_number,
@@ -353,18 +303,22 @@ def parse_ors_directions(directions_data, destination_name):
                     'distance_meters': distance_m,
                     'duration_seconds': duration_s,
                     'start_location': {
-                        'lat': start_coord[1] if len(start_coord) > 1 else 0,  # ORS uses [lng, lat]
-                        'lng': start_coord[0] if len(start_coord) > 0 else 0
+                        'lat': start_location.get('lat', 0),
+                        'lng': start_location.get('lng', 0)
                     },
                     'end_location': {
-                        'lat': end_coord[1] if len(end_coord) > 1 else 0,    # ORS uses [lng, lat]
-                        'lng': end_coord[0] if len(end_coord) > 0 else 0
+                        'lat': end_location.get('lat', 0),
+                        'lng': end_location.get('lng', 0)
                     },
-                    'maneuver': str(step.get('type', 'straight')),  # Convert to string
-                    'travel_mode': 'WALKING'
+                    'maneuver': step.get('maneuver', 'straight'),
+                    'travel_mode': step.get('travel_mode', 'WALKING')
                 }
                 steps.append(step_data)
                 step_number += 1
+        
+        # Format total distance and duration
+        total_distance = f"{total_distance_m:.0f} m" if total_distance_m < 1000 else f"{total_distance_m/1000:.1f} km"
+        total_duration = f"{total_duration_s//60:.0f} min" if total_duration_s >= 60 else f"{total_duration_s:.0f} sec"
         
         # Ensure we have at least one step
         if not steps:
@@ -381,6 +335,12 @@ def parse_ors_directions(directions_data, destination_name):
                 'travel_mode': 'WALKING'
             })
         
+        # Get route overview
+        overview_polyline = route.get('overview_polyline', {}).get('points', '')
+        bounds = route.get('bounds', {})
+        start_address = legs[0].get('start_address', 'Current Location') if legs else 'Current Location'
+        end_address = legs[-1].get('end_address', destination_name) if legs else destination_name
+        
         return {
             'success': True,
             'route': {
@@ -389,17 +349,36 @@ def parse_ors_directions(directions_data, destination_name):
                 'distance_meters': total_distance_m,
                 'duration_seconds': total_duration_s,
                 'steps': steps,
-                'start_address': 'Current Location',
-                'end_address': destination_name,
-                'overview_polyline': '',  # ORS has different polyline format
-                'bounds': {}
+                'start_address': start_address,
+                'end_address': end_address,
+                'overview_polyline': overview_polyline,
+                'bounds': bounds
             }
         }
         
     except (KeyError, IndexError, TypeError) as e:
-        logging.error(f"Error parsing ORS directions data: {e}")
-        logging.error(f"ORS response structure keys: {list(directions_data.keys()) if isinstance(directions_data, dict) else 'Not a dict'}")
-        raise ValueError("Invalid ORS directions data format")
+        logging.error(f"Error parsing Google directions data: {e}")
+        logging.error(f"Google response structure keys: {list(directions_data.keys()) if isinstance(directions_data, dict) else 'Not a dict'}")
+        raise ValueError("Invalid Google directions data format")
+
+def clean_html_instruction(html_instruction):
+    """Remove HTML tags from Google's instruction text"""
+    import re
+    
+    if not html_instruction:
+        return "Continue straight"
+    
+    # Remove HTML tags
+    clean_text = re.sub('<[^<]+?>', '', html_instruction)
+    
+    # Decode HTML entities
+    clean_text = clean_text.replace('&nbsp;', ' ')
+    clean_text = clean_text.replace('&amp;', '&')
+    clean_text = clean_text.replace('&lt;', '<')
+    clean_text = clean_text.replace('&gt;', '>')
+    clean_text = clean_text.replace('&quot;', '"')
+    
+    return clean_text.strip()
 
 def clean_instruction_text(instruction):
     """Clean and optimize navigation instructions for voice"""

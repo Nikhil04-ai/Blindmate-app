@@ -33,7 +33,9 @@ BlindMate is an advanced web-based assistive technology application designed to 
 - `styles.css`: Accessibility-focused styling
 
 ### API Endpoints
-- `/api/directions`: OpenRouteService (ORS) directions and geocoding integration
+- `/api/navigate`: Google Directions API integration for voice navigation
+- `/api/google-maps-key`: Secure API key delivery for frontend
+- `/api/directions`: Legacy endpoint (redirects to navigate)
 - `/api/command`: Voice command processing via Gemini AI
 - Static file serving for HTML, CSS, JS
 
@@ -46,7 +48,16 @@ BlindMate is an advanced web-based assistive technology application designed to 
 6. **Permission Management**: Requests camera, microphone, and location access on load
 
 ## Recent Changes
-- **2025-08-08**: Migrated from Google Maps to OpenRouteService (ORS) APIs
+- **2025-08-10**: Complete integration with Google Directions API and Maps
+  - Implemented full navigation feature using Google Directions API
+  - Added interactive Google Maps with real-time route visualization
+  - Created `/api/navigate` endpoint for voice-controlled navigation
+  - Integrated live GPS tracking with map marker updates
+  - Added voice command processing for any location worldwide
+  - Implemented automatic map display during navigation
+  - Error handling for "location not found" and API failures
+  - Mobile and desktop browser compatibility
+- **2025-08-08**: Previous OpenRouteService implementation
   - Replaced Google Directions API with ORS walking directions API
   - Replaced Google Geocoding API with ORS geocoding API  
   - Removed all Google Maps dependencies to eliminate billing requirements
