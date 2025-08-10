@@ -59,17 +59,17 @@ BlindMate is a comprehensive web application designed specifically for visually 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.11 or higher
 - Modern web browser with camera and microphone access
 - Internet connection for AI services
 
-### Environment Setup
+### Option 1: Replit Deployment (Recommended)
 
 1. **Get the required API key**:
    - Visit [Google AI Studio](https://aistudio.google.com)
    - Sign in with your Google account
    - Create a new API key (free)
-   - Keep this key safe - you'll need it in step 4
+   - Keep this key safe - you'll need it in step 3
 
 2. **Set up the project in Replit**:
    - The project is already configured and ready to run
@@ -79,6 +79,52 @@ BlindMate is a comprehensive web application designed specifically for visually 
    - Go to the Secrets tab in your Replit project
    - Add a new secret with key: `GEMINI_API_KEY`
    - Paste your API key as the value
+
+4. **Run the application**:
+   ```bash
+   python main.py
+   ```
+
+### Option 2: Local Development
+
+1. **Quick Setup (Automated)**:
+   ```bash
+   python setup-local.py
+   ```
+   This script will:
+   - Check Python version compatibility
+   - Create a virtual environment
+   - Install all dependencies from `requirements-local.txt`
+   - Create environment template file
+
+2. **Manual Setup**:
+   ```bash
+   # Clone or download the project
+   git clone <repository-url>
+   cd blindmate
+
+   # Create virtual environment
+   python -m venv venv
+
+   # Activate virtual environment
+   # Windows:
+   venv\Scripts\activate
+   # macOS/Linux:
+   source venv/bin/activate
+
+   # Install dependencies
+   pip install -r requirements-local.txt
+   ```
+
+3. **Environment Configuration**:
+   - Copy `.env.template` to `.env`
+   - Add your API keys:
+     ```
+     DATABASE_URL=sqlite:///blindmate.db
+     GEMINI_API_KEY=your_gemini_api_key_here
+     SESSION_SECRET=your_secret_session_key_here
+     GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
+     ```
 
 4. **Run the application**:
    ```bash

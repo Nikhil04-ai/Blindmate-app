@@ -12,4 +12,5 @@ dependencies = [
     "gunicorn>=23.0.0",
     "psycopg2-binary>=2.9.10",
     "sift-stack-py>=0.7.0",
+    "requests>=2.32.4",
 ]

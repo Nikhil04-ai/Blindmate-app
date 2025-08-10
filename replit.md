@@ -50,6 +50,21 @@ BlindMate is an advanced web-based assistive technology application designed to 
 9. **Universal Destination Support**: Works with any Google Maps location worldwide
 10. **Permission Management**: Requests camera, microphone, and location access on load
 
+## Local Development Setup
+- **Requirements File**: `requirements-local.txt` created with all necessary dependencies
+- **Setup Script**: `setup-local.py` provides automated local environment setup
+- **Dependencies**:
+  - `flask>=3.1.1` - Web framework
+  - `flask-cors>=6.0.1` - Cross-origin resource sharing
+  - `flask-sqlalchemy>=3.1.1` - Database ORM
+  - `gunicorn>=23.0.0` - Production web server
+  - `psycopg2-binary>=2.9.10` - PostgreSQL adapter
+  - `requests>=2.31.0` - HTTP library for API calls
+  - `email-validator>=2.2.0` - Email validation
+  - `google-genai>=1.27.0` - Google Gemini AI integration
+  - `sift-stack-py>=0.7.0` - Enhanced functionality
+  - `typing-extensions>=4.8.0` - Type hints support
+
 ## Recent Changes
 - **2025-08-10**: Updated Tutorial System to Match Current App Capabilities
   - **UPDATED TUTORIAL FEATURES**: Tutorial now accurately reflects the current BlindMate app features
