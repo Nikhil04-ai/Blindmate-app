@@ -64,6 +64,12 @@ class BlindMate {
         this.isSpeaking = false;
         this.speechQueue = [];
         
+        // Enhanced speech delay configuration for object announcements
+        this.speechDelayTimer = null; // Timer for delaying speech
+        this.minObjectAnnouncementDelay = 1500; // 1.5 second minimum delay between object announcements
+        this.pendingAnnouncement = null; // Store pending announcement
+        this.isAnnouncementDelayed = false; // Flag to track if announcement is delayed
+        
         // Navigation settings
         this.isNavigating = false;
         this.currentRoute = null;
@@ -1259,6 +1265,14 @@ class BlindMate {
     stopDetection() {
         this.isDetecting = false;
         
+        // Clean up speech delay timer
+        if (this.speechDelayTimer) {
+            clearTimeout(this.speechDelayTimer);
+            this.speechDelayTimer = null;
+        }
+        this.pendingAnnouncement = null;
+        this.isAnnouncementDelayed = false;
+        
         if (this.stream) {
             this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
@@ -1515,7 +1529,7 @@ class BlindMate {
                 }
             });
             
-            this.speak(announcement);
+            this.speak(announcement, false, true); // Mark as object announcement for special delay handling
             this.lastAnnouncement = now;
         }
     }
@@ -2324,12 +2338,18 @@ class BlindMate {
     /**
      * Text-to-speech function with queue management and cooldown
      */
-    speak(text, priority = false) {
+    speak(text, priority = false, isObjectAnnouncement = false) {
         if (!this.synth || !text) {
             return;
         }
 
         const now = Date.now();
+        
+        // Handle object announcements with special delay logic
+        if (isObjectAnnouncement && !priority) {
+            this._handleObjectAnnouncement(text, now);
+            return;
+        }
         
         // If high priority or enough time has passed since last speech
         if (priority || (now - this.lastSpeechTime > this.speechCooldown && !this.isSpeaking)) {
@@ -2344,55 +2364,108 @@ class BlindMate {
     }
     
     /**
+     * Handle object announcements with special delay logic
+     */
+    _handleObjectAnnouncement(text, now) {
+        // Cancel any pending announcement
+        if (this.speechDelayTimer) {
+            clearTimeout(this.speechDelayTimer);
+            this.speechDelayTimer = null;
+        }
+        
+        // Store the pending announcement
+        this.pendingAnnouncement = text;
+        
+        // Calculate delay needed
+        const timeSinceLastSpeech = now - this.lastSpeechTime;
+        const minimumDelay = this.minObjectAnnouncementDelay;
+        
+        if (this.isSpeaking || timeSinceLastSpeech < minimumDelay) {
+            // Need to delay announcement
+            const delayNeeded = this.isSpeaking ? 
+                minimumDelay : // Wait full delay if currently speaking
+                minimumDelay - timeSinceLastSpeech; // Wait remaining time
+                
+            this.isAnnouncementDelayed = true;
+            
+            console.log(`Object announcement delayed by ${delayNeeded}ms for clarity`);
+            
+            this.speechDelayTimer = setTimeout(() => {
+                if (this.pendingAnnouncement) {
+                    this._speakNow(this.pendingAnnouncement);
+                    this.pendingAnnouncement = null;
+                    this.isAnnouncementDelayed = false;
+                }
+            }, delayNeeded);
+        } else {
+            // Can announce immediately
+            this._speakNow(text);
+            this.pendingAnnouncement = null;
+        }
+    }
+
+    /**
      * Internal function to speak immediately
      */
     _speakNow(text) {
         try {
-            // Cancel any ongoing speech
+            // Cancel any ongoing speech immediately to prevent overlaps
             this.synth.cancel();
-            this.isSpeaking = true;
-            this.lastSpeechTime = Date.now();
             
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = this.currentLanguage;
-            
-            // Apply tone-specific voice settings
-            const toneSettings = this.getToneSettings(this.currentTone);
-            utterance.rate = toneSettings.rate;
-            utterance.pitch = toneSettings.pitch;
-            utterance.volume = toneSettings.volume;
-            
-            // Find appropriate voice based on language and tone
-            const voices = this.synth.getVoices();
-            if (voices.length > 0) {
-                let voice = this.findVoiceForTone(voices, this.currentLanguage, this.currentTone);
+            // Small delay to ensure cancellation is processed
+            setTimeout(() => {
+                this.isSpeaking = true;
+                this.lastSpeechTime = Date.now();
                 
-                if (!voice) {
-                    voice = voices.find(v => v.lang === this.currentLanguage) || 
-                           voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
-                           voices.find(v => v.default);
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = this.currentLanguage;
+                
+                // Apply tone-specific voice settings
+                const toneSettings = this.getToneSettings(this.currentTone);
+                utterance.rate = toneSettings.rate;
+                utterance.pitch = toneSettings.pitch;
+                utterance.volume = toneSettings.volume;
+                
+                // Find appropriate voice based on language and tone
+                const voices = this.synth.getVoices();
+                if (voices.length > 0) {
+                    let voice = this.findVoiceForTone(voices, this.currentLanguage, this.currentTone);
+                    
+                    if (!voice) {
+                        voice = voices.find(v => v.lang === this.currentLanguage) || 
+                               voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
+                               voices.find(v => v.default);
+                    }
+                    
+                    if (voice) {
+                        utterance.voice = voice;
+                    }
                 }
                 
-                if (voice) {
-                    utterance.voice = voice;
-                }
-            }
-            
-            utterance.onend = () => {
-                this.isSpeaking = false;
-                setTimeout(() => this._processNextSpeech(), 500);
-            };
-            
-            utterance.onerror = () => {
-                this.isSpeaking = false;
-                setTimeout(() => this._processNextSpeech(), 500);
-            };
-            
-            this.synth.speak(utterance);
+                utterance.onstart = () => {
+                    console.log('Speech started successfully');
+                };
+                
+                utterance.onend = () => {
+                    console.log('Speech ended normally');
+                    this.isSpeaking = false;
+                    // Longer delay before next speech for better clarity
+                    setTimeout(() => this._processNextSpeech(), 750);
+                };
+                
+                utterance.onerror = (event) => {
+                    console.warn('Speech error:', event);
+                    this.isSpeaking = false;
+                    setTimeout(() => this._processNextSpeech(), 750);
+                };
+                
+                this.synth.speak(utterance);
+                
+            }, 50); // Small delay to ensure proper cancellation
             
         } catch (error) {
             this.isSpeaking = false;
-            console.warn('Speech error:', error);
+            console.warn('Speech synthesis error:', error);
         }
     }
     

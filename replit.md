@@ -51,6 +51,18 @@ BlindMate is an advanced web-based assistive technology application designed to 
 10. **Permission Management**: Requests camera, microphone, and location access on load
 
 ## Recent Changes
+- **2025-08-10**: Enhanced Speech System for Object Detection with Anti-Overlap & Delay Controls
+  - **SMOOTH SPEECH ANNOUNCEMENTS**: Added 1.5-second minimum delay between consecutive object announcements to prevent overlapping voices
+  - **IMPROVED SPEECH CANCELLATION**: Enhanced `synth.cancel()` with small timeout delays to ensure proper cancellation before new speech
+  - **INTELLIGENT DELAY MANAGEMENT**: Object announcements queue automatically when speech is active, with smart delay calculation
+  - **NON-OVERLAPPING VOICE OUTPUT**: All speech synthesis now cancels ongoing utterances before starting new ones for crystal-clear audio
+  - **ENHANCED SPEECH EVENT HANDLING**: Added proper `onstart`, `onend`, and `onerror` event handlers with detailed logging for better debugging
+  - **PRIORITY-BASED SPEECH QUEUE**: Object announcements use special delay logic while navigation commands remain high-priority
+  - **AUTOMATIC CLEANUP**: Speech delay timers are properly cleaned up when detection stops to prevent memory leaks
+  - **IMPROVED USER EXPERIENCE**: Users can now understand each announcement clearly without voice overlap confusion
+  - **DEBUG LOGGING**: Added console logs to track speech delay behavior and timing for better monitoring
+  - **FALLBACK HANDLING**: Enhanced error recovery with longer delays between retries for smoother operation
+
 - **2025-08-10**: Enhanced GPS Navigation System with Battery Optimization & Human-Friendly Voice Instructions
   - **IMPROVED GPS ACCURACY**: Updated `navigator.geolocation.watchPosition` with `enableHighAccuracy: true`, `maximumAge: 0`, `timeout: 10000`
   - **ADDED ROBUST ERROR HANDLING**: Clear voice + UI error messages for GPS failures with specific error codes (permission denied, signal unavailable, timeout)
