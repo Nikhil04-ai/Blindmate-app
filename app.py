@@ -118,77 +118,123 @@ def process_command():
         logging.error(f"Error processing command: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/navigate', methods=['POST'])
-def navigate():
-    """Get walking directions using Google Directions API for voice navigation"""
+@app.route('/api/directions', methods=['POST'])
+def get_directions():
+    """Get walking directions using Google Directions API and Google Geocoding API"""
     try:
         data = request.get_json()
         
         if not data or 'origin' not in data or 'destination' not in data:
-            return jsonify({'error': 'Missing origin or destination'}), 400
+            return jsonify({'success': False, 'message': 'Missing origin or destination'}), 400
         
-        origin = data['origin']
-        destination = data['destination']
+        origin = data['origin']  # Expected format: "lat,lng"
+        destination = data['destination']  # Can be address text or "lat,lng"
         
         # Get Google API key from environment
-        api_key = os.environ.get('GOOGLE_DIRECTIONS_API_KEY')
+        api_key = os.environ.get('GOOGLE_MAPS_API_KEY')
         if not api_key:
-            logging.error("GOOGLE_DIRECTIONS_API_KEY not found in environment variables")
-            return jsonify({'error': 'Navigation service API key not configured'}), 500
+            logging.error("GOOGLE_MAPS_API_KEY not found in environment variables")
+            return jsonify({'success': False, 'message': 'Navigation service not configured'}), 500
         
         # Validate origin coordinates format
-        import re
         coord_pattern = r'^-?\d+\.?\d*,-?\d+\.?\d*$'
         if not re.match(coord_pattern, origin):
-            return jsonify({'error': 'Invalid origin coordinates format. Expected: latitude,longitude'}), 400
+            return jsonify({'success': False, 'message': 'Invalid origin coordinates format'}), 400
         
         # Parse origin coordinates
         try:
             origin_lat, origin_lng = map(float, origin.split(','))
             if not (-90 <= origin_lat <= 90) or not (-180 <= origin_lng <= 180):
-                return jsonify({'error': 'Coordinates out of valid range'}), 400
+                return jsonify({'success': False, 'message': 'Origin coordinates out of range'}), 400
         except ValueError:
-            return jsonify({'error': 'Invalid origin coordinates format'}), 400
+            return jsonify({'success': False, 'message': 'Invalid origin coordinates'}), 400
+        
+        # Check if destination is coordinates or address text
+        destination_coords = destination
+        if not re.match(coord_pattern, destination):
+            # Destination is text address - geocode it first
+            logging.info(f"Geocoding destination: {destination}")
+            geocoded_coords = geocode_address(destination, api_key)
+            if not geocoded_coords:
+                return jsonify({'success': False, 'message': 'Location not found'}), 404
+            destination_coords = f"{geocoded_coords['lat']},{geocoded_coords['lng']}"
+            logging.info(f"Geocoded '{destination}' to {destination_coords}")
         
         # Get walking directions from Google Directions API
-        directions_data = get_google_directions(origin, destination, api_key)
+        directions_data = get_google_directions(origin, destination_coords, api_key)
         
         if not directions_data:
-            return jsonify({'error': 'I could not find that location'}), 404
+            return jsonify({'success': False, 'message': 'Location not found'}), 404
         
         # Parse and format the directions for voice navigation
         try:
             navigation_data = parse_google_directions(directions_data, destination)
+            return jsonify(navigation_data)
         except Exception as parse_error:
             logging.error(f"Error parsing Google directions: {parse_error}")
-            return jsonify({'error': 'Failed to parse navigation data'}), 500
-        
-        logging.info(f"Successfully got Google directions with {len(navigation_data.get('route', {}).get('steps', []))} steps")
-        
-        return jsonify(navigation_data)
+            return jsonify({'success': False, 'message': 'Failed to parse navigation data'}), 500
         
     except requests.exceptions.Timeout:
-        logging.error("Google Directions API timeout")
-        return jsonify({'error': 'Navigation service is unavailable right now'}), 504
+        logging.error("Google API timeout")
+        return jsonify({'success': False, 'message': 'Navigation service timeout'}), 504
     except requests.exceptions.RequestException as e:
         logging.error(f"HTTP error getting directions: {e}")
-        return jsonify({'error': 'Navigation service is unavailable right now'}), 503
+        return jsonify({'success': False, 'message': 'Navigation service unavailable'}), 503
     except Exception as e:
         logging.error(f"Error getting directions: {e}")
-        return jsonify({'error': 'Navigation service is unavailable right now'}), 500
-
-@app.route('/api/directions', methods=['POST'])
-def get_directions():
-    """Legacy endpoint - redirects to new navigate endpoint"""
-    return navigate()
+        return jsonify({'success': False, 'message': 'Navigation service error'}), 500
 
 @app.route('/api/google-maps-key', methods=['GET'])
 def get_google_maps_key():
     """Get Google Maps API key for frontend"""
-    api_key = os.environ.get('GOOGLE_DIRECTIONS_API_KEY')
+    api_key = os.environ.get('GOOGLE_MAPS_API_KEY')
     if not api_key:
         return jsonify({'error': 'Google Maps API key not configured'}), 500
     return jsonify({'key': api_key})
+
+def geocode_address(address, api_key):
+    """Geocode address using Google Geocoding API"""
+    try:
+        url = 'https://maps.googleapis.com/maps/api/geocode/json'
+        params = {
+            'address': address,
+            'key': api_key
+        }
+        
+        logging.info(f"Geocoding address: {address}")
+        response = requests.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        try:
+            data = response.json()
+        except Exception as e:
+            logging.error(f"Failed to parse geocoding response: {e}")
+            return None
+        
+        # Check for Google API errors
+        if data.get('status') != 'OK':
+            logging.error(f"Google Geocoding API error: {data.get('status')}")
+            return None
+        
+        # Extract coordinates
+        if data.get('results') and len(data['results']) > 0:
+            location = data['results'][0]['geometry']['location']
+            return {
+                'lat': location['lat'],
+                'lng': location['lng']
+            }
+        
+        return None
+        
+    except requests.exceptions.Timeout:
+        logging.error("Google Geocoding API timeout")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error geocoding address: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Geocoding error: {e}")
+        return None
 
 def get_google_directions(origin, destination, api_key):
     """Get walking directions from Google Directions API"""

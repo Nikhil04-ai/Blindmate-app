@@ -14,7 +14,7 @@ BlindMate is an advanced web-based assistive technology application designed to 
 ## Technology Stack
 - **Backend**: Flask (Python) with SQLAlchemy
 - **Frontend**: Vanilla JavaScript, Bootstrap 5, TensorFlow.js
-- **APIs**: OpenRouteService (ORS) for geocoding and directions, Google Generative AI (Gemini)
+- **APIs**: Google Directions API and Google Geocoding API, Google Generative AI (Gemini)
 - **AI Models**: COCO-SSD for object detection, Gemini for voice command processing
 - **Database**: PostgreSQL
 
@@ -33,10 +33,9 @@ BlindMate is an advanced web-based assistive technology application designed to 
 - `styles.css`: Accessibility-focused styling
 
 ### API Endpoints
-- `/api/navigate`: Google Directions API integration for voice navigation
+- `/api/directions`: Google Directions API and Geocoding API integration for voice navigation
 - `/api/google-maps-key`: Secure API key delivery for frontend
-- `/api/directions`: Legacy endpoint (redirects to navigate)
-- `/api/command`: Voice command processing via Gemini AI
+- `/api/process-command`: Voice command processing via Gemini AI
 - Static file serving for HTML, CSS, JS
 
 ## Navigation System Features
@@ -48,28 +47,21 @@ BlindMate is an advanced web-based assistive technology application designed to 
 6. **Permission Management**: Requests camera, microphone, and location access on load
 
 ## Recent Changes
-- **2025-08-10**: Complete integration with Google Directions API and Maps
-  - Implemented full navigation feature using Google Directions API
-  - Added interactive Google Maps with real-time route visualization
-  - Created `/api/navigate` endpoint for voice-controlled navigation
-  - Integrated live GPS tracking with map marker updates
-  - Added voice command processing for any location worldwide
-  - Implemented automatic map display during navigation
-  - Error handling for "location not found" and API failures
-  - Mobile and desktop browser compatibility
-- **2025-08-08**: Previous OpenRouteService implementation
-  - Replaced Google Directions API with ORS walking directions API
-  - Replaced Google Geocoding API with ORS geocoding API  
-  - Removed all Google Maps dependencies to eliminate billing requirements
-  - Added robust error handling with 30-second timeouts for ORS requests
-  - Implemented location fallback (retry with country name if not found)
-  - Enhanced error messages for better user experience ("Location not found", "No route found")
-  - Voice confirmation before navigation starts
-  - Live GPS tracking with step progression  
-  - Automatic rerouting when user deviates from path
-  - Integrated obstacle detection during navigation
-  - Enhanced permissions handling on page load
-  - Mobile-optimized UI with accessibility features
+- **2025-08-10**: Complete Google-only navigation system
+  - **REMOVED all OpenRouteService (ORS) code** from backend and frontend
+  - **REPLACED with Google Directions API and Google Geocoding API only**
+  - Updated `/api/directions` endpoint to handle both text addresses and coordinates
+  - Implemented Google Geocoding API for address-to-coordinates conversion
+  - Added comprehensive error handling with "Location not found" responses
+  - Enhanced voice command processing for any worldwide location
+  - Integrated Google Maps JavaScript API for real-time route visualization
+  - Added live GPS tracking with `navigator.geolocation.watchPosition`
+  - Implemented turn-by-turn voice navigation with step progression
+  - Added obstacle detection during navigation using COCO-SSD
+  - Voice confirmation workflow: "Should I start navigation to [destination]?"
+  - Automatic rerouting when user deviates from planned route
+  - Mobile and desktop browser compatibility with permissions handling
+  - Single API key configuration: `GOOGLE_MAPS_API_KEY` environment variable
 
 ## User Preferences
 - **Communication Style**: Simple, everyday language (non-technical)
@@ -78,17 +70,20 @@ BlindMate is an advanced web-based assistive technology application designed to 
 - **Code Style**: Well-commented for easy modification
 
 ## Development Notes
-- OpenRouteService API key configured as `ORS_API_KEY` environment variable
+- Google Maps API key configured as `GOOGLE_MAPS_API_KEY` environment variable (used for Directions, Geocoding, and Maps JavaScript APIs)
 - Google Gemini API key configured as `GOOGLE_API_KEY` environment variable
 - All permissions (camera, microphone, location) requested on page load
 - Navigation UI shows current step, total steps, and progress
 - Object detection continues during navigation for obstacle alerts
 - Automatic navigation end detection when destination is reached
-- 30-second timeout for all ORS API requests to prevent hanging
-- Geocoding fallback: retries with country name if location not found initially
+- 30-second timeout for all Google API requests to prevent hanging
+- Supports both exact addresses and general place names worldwide
 
-## Known Issues to Address
-- JavaScript syntax errors in navigation.js causing console errors
-- Need to implement proper voice confirmation workflow
-- GPS tracking needs watchPosition implementation
-- Rerouting logic requires testing with real navigation scenarios
+## Architecture Features
+- **Universal Navigation**: Works with any Google Maps location worldwide
+- **Voice Confirmation**: "Should I start navigation to [destination]?" workflow
+- **Live GPS Tracking**: Uses `navigator.geolocation.watchPosition` for continuous updates
+- **Automatic Step Progression**: Advances when within 25 meters of step endpoint
+- **Smart Rerouting**: Triggers when user deviates >50 meters from planned route
+- **Obstacle Detection**: Real-time alerts during navigation using camera and AI
+- **Error Handling**: Comprehensive fallbacks for API failures and location not found
