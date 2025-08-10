@@ -83,13 +83,14 @@ class GeminiService:
             }
         }
 
-    def process_voice_command(self, command: str, language: str = 'en-IN') -> Dict[str, Any]:
+    def process_voice_command(self, command: str, language: str = 'en-IN', tone: str = 'friendly') -> Dict[str, Any]:
         """
         Process voice command using Gemini AI
         
         Args:
             command: User's voice command
             language: Language code (e.g., 'en-IN', 'hi-IN')
+            tone: Voice tone preference (e.g., 'friendly', 'formal', 'energetic')
             
         Returns:
             Dictionary with action, destination (if applicable), and response
@@ -97,10 +98,10 @@ class GeminiService:
         try:
             # If Gemini is not available, use fallback logic
             if not self.client:
-                return self._fallback_command_processing(command, language)
+                return self._fallback_command_processing(command, language, tone)
             
             # Create system prompt for command processing
-            system_prompt = self._create_system_prompt(language)
+            system_prompt = self._create_system_prompt(language, tone)
             
             # Process command with Gemini - ensure UTF-8 encoding
             user_prompt = f"User command: '{command}'"
@@ -125,16 +126,29 @@ class GeminiService:
             result = json.loads(response.text)
             
             # Validate and enhance response
-            return self._validate_and_enhance_response(result, language)
+            return self._validate_and_enhance_response(result, language, tone)
             
         except Exception as e:
             logging.error(f"Error processing command with Gemini: {e}")
-            return self._fallback_command_processing(command, language)
+            return self._fallback_command_processing(command, language, tone)
 
-    def _create_system_prompt(self, language: str) -> str:
-        """Create system prompt for Gemini based on language"""
+    def _create_system_prompt(self, language: str, tone: str = 'friendly') -> str:
+        """Create system prompt for Gemini based on language and tone"""
         
-        base_prompt = """You are BlindMate, an AI assistant for visually impaired users. Process voice commands and return JSON responses.
+        # Define tone characteristics
+        tone_instructions = {
+            'friendly': 'Use a warm, friendly, and encouraging tone. Be supportive and cheerful.',
+            'formal': 'Use a professional, polite, and respectful tone. Be clear and courteous.',
+            'energetic': 'Use an enthusiastic, vibrant, and motivating tone. Be upbeat and inspiring.',
+            'calm': 'Use a gentle, soothing, and peaceful tone. Be reassuring and steady.',
+            'robotic': 'Use a neutral, precise, and direct tone. Be factual and systematic.'
+        }
+        
+        tone_instruction = tone_instructions.get(tone, tone_instructions['friendly'])
+        
+        base_prompt = f"""You are BlindMate, an AI assistant for visually impaired users. Process voice commands and return JSON responses.
+
+IMPORTANT: {tone_instruction}
 
 Available actions:
 1. start_detection - Start object detection
@@ -145,44 +159,70 @@ Available actions:
 6. save_location - Save current location with a name
 7. enable_location - Enable location services
 8. change_language - Change interface language
-9. unknown - For unrecognized commands
+9. change_tone - Change voice tone/style
+10. unknown - For unrecognized commands
 
 Response format (JSON only):
-{
+{{
     "action": "action_name",
     "destination": "place_name",
-    "response": "what_to_speak_to_user"
-}
+    "response": "what_to_speak_to_user",
+    "language": "language_code_if_changed",
+    "tone": "tone_if_changed"
+}}
 
 Command examples:
-- "start detection" -> {"action": "start_detection", "response": "Starting object detection"}
-- "take me to library" -> {"action": "navigate", "destination": "library", "response": "Navigating to library"}
-- "preview route to canteen" -> {"action": "preview_route", "destination": "canteen", "response": "Previewing route to canteen"}
-- "save this location as hostel" -> {"action": "save_location", "destination": "hostel", "response": "Saving current location as hostel"}
-- "stop navigation" -> {"action": "stop_navigation", "response": "Stopping navigation"}
+- "start detection" -> {{"action": "start_detection", "response": "Starting object detection"}}
+- "take me to library" -> {{"action": "navigate", "destination": "library", "response": "Navigating to library"}}
+- "change language to Hindi" -> {{"action": "change_language", "language": "hi-IN", "response": "भाषा हिंदी में बदल दी गई है"}}
+- "change tone to formal" -> {{"action": "change_tone", "tone": "formal", "response": "Voice tone changed to formal"}}
+- "speak in friendly voice" -> {{"action": "change_tone", "tone": "friendly", "response": "Voice tone changed to friendly"}}
+
+Language change commands:
+- Detect commands like "change language to [language]", "speak in [language]", "switch to [language]"
+- Support: English, Hindi, Spanish, French, German, Italian, Portuguese, Japanese, Chinese, Arabic
+
+Tone change commands:
+- Detect commands like "change tone to [tone]", "speak in [tone] voice", "be more [tone]"
+- Support: friendly, formal, energetic, calm, robotic
 
 Navigation works with ANY location worldwide - users can name any place, address, or landmark.
-Examples: "take me to Central Park", "go to India Gate", "navigate to Eiffel Tower", "directions to Starbucks nearby"
 
 Respond only with valid JSON, no extra text."""
 
         # Add language-specific instructions
         if language.startswith('hi'):
-            base_prompt += "\n\nRespond in Hindi (हिंदी) when the user's language is Hindi."
+            base_prompt += f"\n\nRespond in Hindi (हिंदी). {tone_instruction}"
         elif language.startswith('ta'):
-            base_prompt += "\n\nRespond in Tamil (தமிழ்) when the user's language is Tamil."
+            base_prompt += f"\n\nRespond in Tamil (தமிழ்). {tone_instruction}"
         elif language.startswith('te'):
-            base_prompt += "\n\nRespond in Telugu (తెలుగు) when the user's language is Telugu."
+            base_prompt += f"\n\nRespond in Telugu (తెలుగు). {tone_instruction}"
         elif language.startswith('bn'):
-            base_prompt += "\n\nRespond in Bengali (বাংলা) when the user's language is Bengali."
+            base_prompt += f"\n\nRespond in Bengali (বাংলা). {tone_instruction}"
         elif language.startswith('mr'):
-            base_prompt += "\n\nRespond in Marathi (मराठी) when the user's language is Marathi."
+            base_prompt += f"\n\nRespond in Marathi (मराठी). {tone_instruction}"
         elif language.startswith('gu'):
-            base_prompt += "\n\nRespond in Gujarati (ગુજરાતી) when the user's language is Gujarati."
+            base_prompt += f"\n\nRespond in Gujarati (ગુજરાતી). {tone_instruction}"
+        elif language.startswith('es'):
+            base_prompt += f"\n\nRespond in Spanish (Español). {tone_instruction}"
+        elif language.startswith('fr'):
+            base_prompt += f"\n\nRespond in French (Français). {tone_instruction}"
+        elif language.startswith('de'):
+            base_prompt += f"\n\nRespond in German (Deutsch). {tone_instruction}"
+        elif language.startswith('it'):
+            base_prompt += f"\n\nRespond in Italian (Italiano). {tone_instruction}"
+        elif language.startswith('pt'):
+            base_prompt += f"\n\nRespond in Portuguese (Português). {tone_instruction}"
+        elif language.startswith('ja'):
+            base_prompt += f"\n\nRespond in Japanese (日本語). {tone_instruction}"
+        elif language.startswith('zh'):
+            base_prompt += f"\n\nRespond in Chinese (中文). {tone_instruction}"
+        elif language.startswith('ar'):
+            base_prompt += f"\n\nRespond in Arabic (العربية). {tone_instruction}"
         
         return base_prompt
 
-    def _validate_and_enhance_response(self, result: Dict[str, Any], language: str) -> Dict[str, Any]:
+    def _validate_and_enhance_response(self, result: Dict[str, Any], language: str, tone: str = 'friendly') -> Dict[str, Any]:
         """Validate and enhance the Gemini response"""
         
         # Ensure required fields exist
@@ -193,14 +233,17 @@ Respond only with valid JSON, no extra text."""
             result['response'] = self._get_translation('unknown_command', language)
         
         # Validate action
-        valid_actions = ['start_detection', 'stop_detection', 'navigate', 'enable_location', 'change_language', 'unknown']
+        valid_actions = ['start_detection', 'stop_detection', 'navigate', 'enable_location', 'change_language', 'change_tone', 'unknown']
         if result['action'] not in valid_actions:
             result['action'] = 'unknown'
             result['response'] = self._get_translation('unknown_command', language)
         
+        # Add current tone to response
+        result['current_tone'] = tone
+        
         return result
 
-    def _fallback_command_processing(self, command: str, language: str) -> Dict[str, Any]:
+    def _fallback_command_processing(self, command: str, language: str, tone: str = 'friendly') -> Dict[str, Any]:
         """Fallback command processing when Gemini is unavailable"""
         
         command_lower = command.lower().strip()
@@ -234,13 +277,22 @@ Respond only with valid JSON, no extra text."""
                 'response': self._get_translation('enable_location', language)
             }
         
-        elif any(word in command_lower for word in ['change language', 'switch language', 'भाषा बदलो', 'मोझी बदला', 'மொழியை மாற்று']):
+        elif any(word in command_lower for word in ['change language', 'switch language', 'speak in', 'भाषा बदलो', 'मोझी बदला', 'மொழியை மாற்று']):
             new_language = self._extract_language(command_lower)
             return {
                 'action': 'change_language',
                 'language': new_language,
                 'response': self._get_translation('language_changed', language)
             }
+        
+        elif any(word in command_lower for word in ['change tone', 'switch tone', 'voice tone', 'be more', 'speak', 'sound']):
+            new_tone = self._extract_tone(command_lower)
+            if new_tone:
+                return {
+                    'action': 'change_tone',
+                    'tone': new_tone,
+                    'response': f"Voice tone changed to {new_tone}"
+                }
         
         # Unknown command
         return {
@@ -290,6 +342,30 @@ Respond only with valid JSON, no extra text."""
                 return lang_code
         
         return 'en-IN'  # Default to English
+
+    def _extract_tone(self, command: str) -> str:
+        """Extract tone from tone change command"""
+        tone_map = {
+            'friendly': 'friendly',
+            'formal': 'formal',
+            'professional': 'formal',
+            'energetic': 'energetic',
+            'enthusiastic': 'energetic',
+            'excited': 'energetic',
+            'calm': 'calm',
+            'peaceful': 'calm',
+            'soothing': 'calm',
+            'robotic': 'robotic',
+            'robot': 'robotic',
+            'neutral': 'robotic'
+        }
+        
+        command_lower = command.lower()
+        for tone_name, tone_code in tone_map.items():
+            if tone_name in command_lower:
+                return tone_code
+        
+        return None  # No tone detected
 
     def _get_translation(self, key: str, language: str) -> str:
         """Get translated text for the given key and language"""

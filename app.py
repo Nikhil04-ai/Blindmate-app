@@ -2,7 +2,7 @@ import os
 import logging
 import requests
 import re
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, session
 from flask_cors import CORS
 from gemini_service import GeminiService
 
@@ -105,12 +105,26 @@ def process_command():
             return jsonify({'error': 'Missing command in request'}), 400
         
         command = data['command']
-        language = data.get('language', 'en-IN')
+        language = data.get('language', session.get('current_language', 'en-IN'))
+        tone = data.get('tone', session.get('current_tone', 'friendly'))
         
-        logging.info(f"Processing command: {command} in language: {language}")
+        logging.info(f"Processing command: {command} in language: {language} with tone: {tone}")
         
-        # Process command with Gemini
-        result = gemini_service.process_voice_command(command, language)
+        # Check for language/tone change commands
+        result = gemini_service.process_voice_command(command, language, tone)
+        
+        # Update session if language or tone changed
+        if result.get('action') == 'change_language' and result.get('language'):
+            session['current_language'] = result['language']
+            logging.info(f"Language changed to: {result['language']}")
+        
+        if result.get('action') == 'change_tone' and result.get('tone'):
+            session['current_tone'] = result['tone']
+            logging.info(f"Tone changed to: {result['tone']}")
+        
+        # Add current session preferences to response
+        result['current_language'] = session.get('current_language', 'en-IN')
+        result['current_tone'] = session.get('current_tone', 'friendly')
         
         return jsonify(result)
         
@@ -195,6 +209,32 @@ def get_google_maps_key():
     if not api_key:
         return jsonify({'error': 'Google Maps API key not configured'}), 500
     return jsonify({'key': api_key})
+
+@app.route('/api/preferences', methods=['GET', 'POST'])
+def preferences():
+    """Get or set user language and tone preferences"""
+    if request.method == 'GET':
+        return jsonify({
+            'language': session.get('current_language', 'en-IN'),
+            'tone': session.get('current_tone', 'friendly')
+        })
+    
+    elif request.method == 'POST':
+        data = request.get_json()
+        
+        if 'language' in data:
+            session['current_language'] = data['language']
+            logging.info(f"Language preference updated to: {data['language']}")
+        
+        if 'tone' in data:
+            session['current_tone'] = data['tone']
+            logging.info(f"Tone preference updated to: {data['tone']}")
+        
+        return jsonify({
+            'success': True,
+            'language': session.get('current_language'),
+            'tone': session.get('current_tone')
+        })
 
 def geocode_address(address, api_key):
     """Geocode address using Google Geocoding API"""

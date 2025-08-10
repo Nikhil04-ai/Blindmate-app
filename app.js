@@ -13,6 +13,7 @@ class BlindMate {
         this.isDetecting = false;
         this.stream = null;
         this.currentLanguage = 'en-IN';
+        this.currentTone = 'friendly';
         this.userLocation = null;
         
         // Voice synthesis and recognition
@@ -27,6 +28,7 @@ class BlindMate {
             voiceBtn: document.getElementById('voiceCommandBtn'),
             locationBtn: document.getElementById('locationBtn'),
             languageSelect: document.getElementById('languageSelect'),
+            toneSelect: document.getElementById('toneSelect'),
             systemStatus: document.getElementById('systemStatus'),
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
@@ -304,7 +306,8 @@ class BlindMate {
         try {
             this.updateStatus('Initializing BlindMate...', 'info');
             
-            // Check if this is a first-time user
+            // Load user preferences and check if this is a first-time user
+            await this.loadServerPreferences();
             this.checkFirstTimeUser();
             
             // Initialize DOM elements first
@@ -341,6 +344,7 @@ class BlindMate {
             voiceBtn: document.getElementById('voiceCommandBtn'),
             locationBtn: document.getElementById('locationBtn'),
             languageSelect: document.getElementById('languageSelect'),
+            toneSelect: document.getElementById('toneSelect'),
             detectionStatus: document.getElementById('detectionStatus'),
             voiceStatus: document.getElementById('voiceStatus'),
             systemStatus: document.getElementById('systemStatus'),
@@ -352,6 +356,37 @@ class BlindMate {
             loadingOverlay: document.getElementById('loadingOverlay'),
             detectionIndicator: document.getElementById('detectionIndicator')
         };
+
+        // Ensure all critical elements exist
+        this.validateElements();
+    }
+
+    /**
+     * Validate that essential elements exist and create fallbacks if needed
+     */
+    validateElements() {
+        const requiredElements = ['video', 'canvas', 'startBtn', 'stopBtn', 'voiceBtn', 'locationBtn', 'languageSelect', 'toneSelect', 'systemStatus'];
+        
+        for (const elementKey of requiredElements) {
+            if (!this.elements[elementKey]) {
+                console.warn(`Missing element: ${elementKey}`);
+                
+                // Create fallback element to prevent crashes
+                if (elementKey === 'systemStatus') {
+                    this.elements[elementKey] = this.createStatusElement();
+                }
+            }
+        }
+    }
+
+    /**
+     * Create fallback status element
+     */
+    createStatusElement() {
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'alert alert-info';
+        statusDiv.textContent = 'System ready';
+        return statusDiv;
     }
     
     /**
@@ -369,11 +404,25 @@ class BlindMate {
      * Setup all event listeners
      */
     setupEventListeners() {
-        this.elements.startBtn.addEventListener('click', () => this.startDetection());
-        this.elements.stopBtn.addEventListener('click', () => this.stopDetection());
-        this.elements.voiceBtn.addEventListener('click', () => this.startVoiceCommand());
-        this.elements.locationBtn.addEventListener('click', () => this.requestLocation());
-        this.elements.languageSelect.addEventListener('change', (e) => this.changeLanguage(e.target.value));
+        // Add event listeners with null checks
+        if (this.elements.startBtn) {
+            this.elements.startBtn.addEventListener('click', () => this.startDetection());
+        }
+        if (this.elements.stopBtn) {
+            this.elements.stopBtn.addEventListener('click', () => this.stopDetection());
+        }
+        if (this.elements.voiceBtn) {
+            this.elements.voiceBtn.addEventListener('click', () => this.startVoiceCommand());
+        }
+        if (this.elements.locationBtn) {
+            this.elements.locationBtn.addEventListener('click', () => this.requestLocation());
+        }
+        if (this.elements.languageSelect) {
+            this.elements.languageSelect.addEventListener('change', (e) => this.changeLanguage(e.target.value));
+        }
+        if (this.elements.toneSelect) {
+            this.elements.toneSelect.addEventListener('change', (e) => this.changeTone(e.target.value));
+        }
         
         // Keyboard shortcuts for accessibility and volume key detection
         document.addEventListener('keydown', (e) => {
@@ -1202,7 +1251,8 @@ class BlindMate {
                 },
                 body: JSON.stringify({
                     command: command,
-                    language: this.currentLanguage
+                    language: this.currentLanguage,
+                    tone: this.currentTone
                 })
             });
             
@@ -1344,10 +1394,18 @@ class BlindMate {
                 break;
                 
             case 'change_language':
-                if (language && this.languages[language]) {
-                    this.changeLanguage(language);
+                if (result.language) {
+                    this.changeLanguage(result.language);
                 } else {
                     this.speak('Language not supported', true);
+                }
+                break;
+                
+            case 'change_tone':
+                if (result.tone) {
+                    this.changeTone(result.tone);
+                } else {
+                    this.speak('Tone not supported', true);
                 }
                 break;
                 
@@ -1795,19 +1853,145 @@ class BlindMate {
      * Change application language
      */
     changeLanguage(langCode) {
-        if (!this.languages[langCode]) {
-            return;
-        }
+        console.log('Changing language to:', langCode);
         
         this.currentLanguage = langCode;
         this.elements.languageSelect.value = langCode;
         
-        if (this.recognition) {
-            this.recognition.lang = langCode;
+        // Update recognition language
+        if (this.commandRecognition) {
+            this.commandRecognition.lang = langCode;
+        }
+        if (this.continuousRecognition) {
+            this.continuousRecognition.lang = langCode;
         }
         
-        const langName = this.languages[langCode].name;
-        this.speak(`Language changed to ${langName}`);
+        // Update language preference on server
+        this.updateServerPreferences();
+        
+        this.speak(`Language changed to ${this.getLanguageName(langCode)}`);
+    }
+
+    /**
+     * Change voice tone
+     */
+    changeTone(tone) {
+        console.log('Changing tone to:', tone);
+        
+        this.currentTone = tone;
+        this.elements.toneSelect.value = tone;
+        
+        // Update tone preference on server
+        this.updateServerPreferences();
+        
+        // Speak confirmation with new tone
+        this.speak(`Voice tone changed to ${tone}`, true);
+    }
+
+    /**
+     * Update preferences on server
+     */
+    async updateServerPreferences() {
+        try {
+            await fetch('/api/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: this.currentLanguage,
+                    tone: this.currentTone
+                })
+            });
+        } catch (error) {
+            console.error('Error updating preferences:', error);
+        }
+    }
+
+    /**
+     * Load preferences from server
+     */
+    async loadServerPreferences() {
+        try {
+            const response = await fetch('/api/preferences');
+            const preferences = await response.json();
+            
+            if (preferences.language) {
+                this.currentLanguage = preferences.language;
+                this.elements.languageSelect.value = preferences.language;
+            }
+            
+            if (preferences.tone) {
+                this.currentTone = preferences.tone;
+                this.elements.toneSelect.value = preferences.tone;
+            }
+        } catch (error) {
+            console.error('Error loading preferences:', error);
+        }
+    }
+
+    /**
+     * Get display name for language code
+     */
+    getLanguageName(langCode) {
+        const languageNames = {
+            'en-IN': 'English',
+            'hi-IN': 'Hindi',
+            'ta-IN': 'Tamil',
+            'te-IN': 'Telugu',
+            'bn-IN': 'Bengali',
+            'mr-IN': 'Marathi',
+            'gu-IN': 'Gujarati',
+            'es-ES': 'Spanish',
+            'fr-FR': 'French',
+            'de-DE': 'German',
+            'it-IT': 'Italian',
+            'pt-PT': 'Portuguese',
+            'ja-JP': 'Japanese',
+            'zh-CN': 'Chinese',
+            'ar-SA': 'Arabic'
+        };
+        return languageNames[langCode] || langCode;
+    }
+
+    /**
+     * Get tone-specific voice settings
+     */
+    getToneSettings(tone) {
+        const toneSettings = {
+            'friendly': { rate: 0.9, pitch: 1.1, volume: 0.8 },
+            'formal': { rate: 0.7, pitch: 0.9, volume: 0.8 },
+            'energetic': { rate: 1.1, pitch: 1.2, volume: 0.9 },
+            'calm': { rate: 0.6, pitch: 0.8, volume: 0.7 },
+            'robotic': { rate: 0.8, pitch: 0.7, volume: 0.8 }
+        };
+        return toneSettings[tone] || toneSettings['friendly'];
+    }
+
+    /**
+     * Find appropriate voice for tone
+     */
+    findVoiceForTone(voices, language, tone) {
+        // Try to find voices that match tone characteristics
+        const langVoices = voices.filter(v => v.lang === language || v.lang.startsWith(language.split('-')[0]));
+        
+        if (langVoices.length === 0) return null;
+        
+        // Different tone preferences for voice selection
+        switch (tone) {
+            case 'formal':
+                return langVoices.find(v => v.name.toLowerCase().includes('professional') || 
+                                          v.name.toLowerCase().includes('formal')) || langVoices[0];
+            case 'energetic':
+                return langVoices.find(v => v.name.toLowerCase().includes('young') || 
+                                          v.name.toLowerCase().includes('bright')) || langVoices[0];
+            case 'calm':
+                return langVoices.find(v => v.name.toLowerCase().includes('calm') || 
+                                          v.name.toLowerCase().includes('soft')) || langVoices[0];
+            case 'robotic':
+                return langVoices.find(v => v.name.toLowerCase().includes('robotic') || 
+                                          v.name.toLowerCase().includes('computer')) || langVoices[0];
+            default:
+                return langVoices[0];
+        }
     }
 
     /**
@@ -1844,16 +2028,23 @@ class BlindMate {
             
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = this.currentLanguage;
-            utterance.rate = 0.8;
-            utterance.pitch = 1;
-            utterance.volume = 0.8;
             
-            // Find appropriate voice
+            // Apply tone-specific voice settings
+            const toneSettings = this.getToneSettings(this.currentTone);
+            utterance.rate = toneSettings.rate;
+            utterance.pitch = toneSettings.pitch;
+            utterance.volume = toneSettings.volume;
+            
+            // Find appropriate voice based on language and tone
             const voices = this.synth.getVoices();
             if (voices.length > 0) {
-                const voice = voices.find(v => v.lang === this.currentLanguage) || 
-                             voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
-                             voices.find(v => v.default);
+                let voice = this.findVoiceForTone(voices, this.currentLanguage, this.currentTone);
+                
+                if (!voice) {
+                    voice = voices.find(v => v.lang === this.currentLanguage) || 
+                           voices.find(v => v.lang.startsWith(this.currentLanguage.split('-')[0])) ||
+                           voices.find(v => v.default);
+                }
                 
                 if (voice) {
                     utterance.voice = voice;
