@@ -45,6 +45,7 @@ class UniversalNavigation {
         this.confirmationRecognition = null;
         this.speechSynthesis = window.speechSynthesis;
         this.isSpeaking = false;
+        this.isActivelyListening = false;
         this.speechQueue = [];
         this.lastUtterance = null;
         this.speechCancellationTimer = null;
@@ -400,7 +401,8 @@ class UniversalNavigation {
         console.log('Speech recognition object created successfully');
         
         this.recognition.onstart = () => {
-            console.log('Speech recognition started');
+            console.log('Navigation speech recognition started');
+            this.isActivelyListening = true;
             this.updateStatusDisplay('Listening...', 'Speak your destination');
         };
         
@@ -413,8 +415,22 @@ class UniversalNavigation {
         };
         
         this.recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
-            this.speak('Sorry, I didn\'t understand. Please try again.');
+            console.error('Navigation speech recognition error:', event.error);
+            const wasActivelyListening = this.isActivelyListening;
+            this.isActivelyListening = false;
+            
+            // Only speak error messages for meaningful errors, not technical ones
+            if (event.error === 'not-allowed') {
+                this.speak('Microphone access is required for navigation. Please allow microphone access.');
+            } else if (event.error === 'no-speech' && wasActivelyListening) {
+                this.speak('No speech detected. Please try again.');
+            }
+            // Don't speak for 'aborted' or other technical errors that happen during normal operation
+        };
+        
+        this.recognition.onend = () => {
+            console.log('Navigation speech recognition ended');
+            this.isActivelyListening = false;
         };
         
         // Confirmation recognition
@@ -529,6 +545,7 @@ class UniversalNavigation {
      * Start listening for navigation commands
      */
     startListening() {
+        this.isActivelyListening = true;
         if (this.awaitingConfirmation) {
             this.confirmationRecognition.start();
         } else {

@@ -706,7 +706,11 @@ class BlindMate {
             this.elements.voiceStatus.textContent = 'Listening';
             this.elements.voiceStatus.className = 'badge bg-primary';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Listening';
-            this.speak('Speak your command now', true);
+            console.log('Speech started successfully');
+            // Only speak feedback if this wasn't triggered by volume button to avoid conflicts
+            if (!this.volumeUpPressed) {
+                this.speak('Speak your command now', true);
+            }
         };
         
         this.commandRecognition.onresult = (event) => {
@@ -1022,17 +1026,16 @@ class BlindMate {
         // Add debouncing to prevent accidental volume button presses
         this.volumeUpPressed = true;
         
-        // Start voice command with improved feedback
+        // Start voice command with improved feedback - don't say "Voice command ready" at the same time as starting recognition
         this.updateStatus('🎤 Volume Up pressed - Voice command ready', 'info');
-        this.speak('Voice command ready. Speak your command now.', true);
         
-        // Delay to let the speech finish, then start listening with timeout
+        // Start listening immediately without conflicting speech
         this.volumeKeyTimeout = setTimeout(() => {
             if (this.volumeUpPressed) {
                 this.startVoiceCommandWithTimeout();
                 this.volumeUpPressed = false;
             }
-        }, 1500);
+        }, 300); // Reduced delay to start faster
     }
     
     /**
