@@ -83,8 +83,13 @@ class BlindMate {
         // Mobile double-tap gesture detection
         this.lastTapTime = 0;
         this.tapTimeout = null;
-        this.doubleTapDelay = 300; // milliseconds between taps
+        this.doubleTapDelay = 400; // milliseconds between taps (increased for better detection)
         this.isMobileDevice = this.detectMobileDevice();
+        console.log('Mobile device detected:', this.isMobileDevice, {
+            userAgent: navigator.userAgent,
+            ontouchstart: 'ontouchstart' in window,
+            maxTouchPoints: navigator.maxTouchPoints
+        });
         
         this.init();
     }
@@ -415,48 +420,116 @@ class BlindMate {
      * Setup mobile double-tap gesture detection
      */
     setupMobileDoubleTap() {
-        let touchStartTime = 0;
+        let firstTapTime = 0;
+        let tapCount = 0;
+        let tapTimeout = null;
+        
+        console.log('Setting up mobile double-tap gesture detection...');
         
         // Add touch event listener to entire document for full-screen double-tap
-        document.addEventListener('touchstart', (e) => {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - touchStartTime;
+        document.addEventListener('touchend', (e) => {
+            const currentTime = Date.now();
+            
+            // Clear existing timeout
+            if (tapTimeout) {
+                clearTimeout(tapTimeout);
+                tapTimeout = null;
+            }
             
             // Prevent interference with UI elements that need single taps
             const target = e.target;
             const isUIElement = target.tagName === 'BUTTON' || 
                               target.tagName === 'SELECT' || 
+                              target.tagName === 'INPUT' ||
                               target.closest('button') || 
                               target.closest('select') ||
+                              target.closest('input') ||
+                              target.closest('.btn') ||
+                              target.id.includes('Btn') ||
+                              target.className.includes('btn') ||
+                              target.classList.contains('form-control') ||
+                              target.classList.contains('form-select');
+            
+            // Skip double-tap detection on UI elements
+            if (isUIElement) {
+                console.log('Tap on UI element ignored:', target.tagName, target.id || target.className);
+                return;
+            }
+            
+            tapCount++;
+            
+            if (tapCount === 1) {
+                // First tap
+                firstTapTime = currentTime;
+                
+                // Set timeout to reset tap count if no second tap
+                tapTimeout = setTimeout(() => {
+                    tapCount = 0;
+                    firstTapTime = 0;
+                    console.log('Double-tap timeout - single tap detected');
+                }, this.doubleTapDelay);
+                
+                console.log('First tap detected, waiting for second tap...');
+                
+            } else if (tapCount === 2) {
+                // Second tap - check if within double-tap delay
+                const timeDiff = currentTime - firstTapTime;
+                
+                if (timeDiff <= this.doubleTapDelay) {
+                    // Double-tap detected!
+                    e.preventDefault(); // Prevent default zoom behavior
+                    e.stopPropagation(); // Stop event bubbling
+                    
+                    console.log(`Double-tap detected! Time difference: ${timeDiff}ms`);
+                    
+                    // Provide immediate feedback
+                    navigator.vibrate && navigator.vibrate(50); // Short vibration if available
+                    this.speak('Listening started');
+                    
+                    // Call the same function as voice command button
+                    setTimeout(() => {
+                        this.startVoiceCommand();
+                    }, 100); // Small delay to ensure speech starts first
+                    
+                    // Reset counters
+                    tapCount = 0;
+                    firstTapTime = 0;
+                } else {
+                    // Too slow, treat as new first tap
+                    tapCount = 1;
+                    firstTapTime = currentTime;
+                    
+                    tapTimeout = setTimeout(() => {
+                        tapCount = 0;
+                        firstTapTime = 0;
+                    }, this.doubleTapDelay);
+                    
+                    console.log('Second tap too slow, treating as new first tap');
+                }
+            }
+        }, { passive: false });
+        
+        // Also add touchstart to prevent default behaviors during double-tap
+        document.addEventListener('touchstart', (e) => {
+            // Only prevent default on non-UI elements during potential double-tap
+            const target = e.target;
+            const isUIElement = target.tagName === 'BUTTON' || 
+                              target.tagName === 'SELECT' || 
+                              target.tagName === 'INPUT' ||
+                              target.closest('button') || 
+                              target.closest('select') ||
+                              target.closest('input') ||
                               target.closest('.btn') ||
                               target.id.includes('Btn') ||
                               target.className.includes('btn');
             
-            // Skip double-tap detection on UI elements
-            if (isUIElement) {
-                return;
-            }
-            
-            // Double-tap detection logic
-            if (tapLength < this.doubleTapDelay && tapLength > 0) {
-                // Double-tap detected!
-                e.preventDefault(); // Prevent default zoom behavior
-                
-                console.log('Double-tap detected on mobile - starting voice command');
-                this.speak('Listening started');
-                
-                // Call the same function as voice command button
-                this.startVoiceCommand();
-                
-                // Reset tap timing
-                touchStartTime = 0;
-            } else {
-                // Single tap or first tap of potential double-tap
-                touchStartTime = currentTime;
+            if (!isUIElement && tapCount === 1) {
+                // During potential double-tap sequence, prevent default behaviors
+                e.preventDefault();
             }
         }, { passive: false });
         
-        console.log('Mobile double-tap gesture enabled for voice commands');
+        console.log('Mobile double-tap gesture enabled for voice commands with improved detection');
         
         // Add visual hint for mobile users
         this.addMobileHint();
@@ -546,8 +619,11 @@ class BlindMate {
         }
         
         // Mobile double-tap gesture for voice commands
+        console.log('Checking mobile device for double-tap setup:', this.isMobileDevice);
         if (this.isMobileDevice) {
             this.setupMobileDoubleTap();
+        } else {
+            console.log('Desktop device - double-tap not enabled');
         }
         
         // Keyboard shortcuts for accessibility and volume key detection
