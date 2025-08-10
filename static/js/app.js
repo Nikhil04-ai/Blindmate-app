@@ -1730,8 +1730,15 @@ class BlindMate {
             // Create contextual announcement
             let announcement = '';
             
+            // Debug: Log navigation state
+            console.log('Navigation state check:', {
+                isNavigating: this.isNavigating,
+                hasRoute: !!this.currentRoute,
+                objectCount: objectsWithDistance.length
+            });
+            
             // During navigation, use "obstacle detected" instead of specific object names
-            if (this.isNavigating) {
+            if (this.isNavigating && this.currentRoute) {
                 if (objectsWithDistance.length === 1) {
                     const obj = objectsWithDistance[0];
                     announcement = `Obstacle detected ${obj.position}, ${obj.distance}`;
@@ -1745,6 +1752,7 @@ class BlindMate {
                         announcement += `${obj.position}`;
                     });
                 }
+                console.log('Navigation mode: Using obstacle detection announcement');
             } else {
                 // Normal detection mode - use specific object names
                 objectsWithDistance.forEach((obj, index) => {
@@ -1757,6 +1765,7 @@ class BlindMate {
                         announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
                     }
                 });
+                console.log('Normal mode: Using specific object names');
             }
             
             this.speak(announcement, false, true); // Mark as object announcement for special delay handling
