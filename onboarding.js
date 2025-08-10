@@ -11,22 +11,28 @@ class OnboardingTutorial {
         this.synthesis = window.speechSynthesis;
         this.practiceExercises = [
             {
-                title: "Exercise 1: Basic Greeting",
-                instruction: "Say 'Hello BlindMate' and wait for a response.",
-                expectedResponse: "hello",
-                successMessage: "Great! BlindMate recognized your greeting."
+                title: "Exercise 1: Wake Word Practice",
+                instruction: "Say 'Hey BlindMate, start detection' and wait for a response.",
+                expectedResponse: "detection",
+                successMessage: "Perfect! You've mastered the wake word feature."
             },
             {
-                title: "Exercise 2: Object Detection",
-                instruction: "Say 'What do you see?' to start object detection.",
-                expectedResponse: "see",
-                successMessage: "Perfect! You've learned how to ask about your surroundings."
+                title: "Exercise 2: Universal Navigation",
+                instruction: "Say 'Hey BlindMate, take me to Times Square' to practice global navigation.",
+                expectedResponse: "times square",
+                successMessage: "Excellent! You can now navigate anywhere worldwide."
             },
             {
-                title: "Exercise 3: Navigation Request",
-                instruction: "Say 'Take me to the library' to practice navigation commands.",
-                expectedResponse: "library",
-                successMessage: "Excellent! You can now request navigation to any location."
+                title: "Exercise 3: Voice Customization",
+                instruction: "Say 'Change tone to energetic' to practice voice customization.",
+                expectedResponse: "energetic",
+                successMessage: "Great! You've learned how to customize BlindMate's voice."
+            },
+            {
+                title: "Exercise 4: Language Switching",
+                instruction: "Say 'Change language to Hindi' to practice multilingual features.",
+                expectedResponse: "hindi",
+                successMessage: "Wonderful! You can now use BlindMate in 15 different languages."
             }
         ];
         this.currentExercise = 0;
@@ -409,12 +415,12 @@ function speakExample(text) {
 
 function playDetectionDemo() {
     const tutorial = window.tutorialInstance;
-    tutorial.speak('Detection demo: Person ahead at 3 meters. Car approaching from the right. Chair to your left. Tree blocking the path ahead.');
+    tutorial.speak('Enhanced detection demo with anti-overlap technology: Person ahead at 3 meters. Pausing for clarity. Car approaching from the right. Smart delay prevents voice overlap. Chair to your left with distance awareness.');
 }
 
 function playNavigationDemo() {
     const tutorial = window.tutorialInstance;
-    tutorial.speak('Navigation demo: Route calculated to Central Library. Distance: 500 meters. Estimated time: 6 minutes. Starting navigation. In 50 meters, turn right onto Main Street. Continue straight for 200 meters. Turn left at the traffic light. Your destination is on the right. You have arrived at Central Library.');
+    tutorial.speak('Universal navigation demo: Should I start navigation to Times Square, New York? Route calculated using Google Maps. Distance: 2.5 kilometers. Battery-optimized GPS tracking enabled. Turn left in 50 meters onto Broadway. Smart rerouting available if you deviate. Automatic arrival detection when within 10 meters. You have arrived at Times Square.');
 }
 
 function playEmergencyDemo() {

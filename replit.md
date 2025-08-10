@@ -51,6 +51,19 @@ BlindMate is an advanced web-based assistive technology application designed to 
 10. **Permission Management**: Requests camera, microphone, and location access on load
 
 ## Recent Changes
+- **2025-08-10**: Updated Tutorial System to Match Current App Capabilities
+  - **UPDATED TUTORIAL FEATURES**: Tutorial now accurately reflects the current BlindMate app features
+  - **15 LANGUAGE SUPPORT**: Tutorial showcases global language support (not just 7 Indian languages)
+  - **5 VOICE TONE OPTIONS**: Updated tutorial to highlight friendly, formal, energetic, calm, and robotic tones
+  - **WAKE WORD INTEGRATION**: Tutorial now teaches "Hey BlindMate" voice activation
+  - **UNIVERSAL NAVIGATION**: Removed outdated location restrictions, now showcases worldwide navigation
+  - **ENHANCED OBJECT DETECTION**: Tutorial explains 1.5-second speech delays and anti-overlap technology
+  - **MOBILE GESTURE SUPPORT**: Added double-tap gesture information for mobile devices
+  - **BATTERY OPTIMIZATION**: Tutorial covers smart GPS frequency adjustment for battery saving
+  - **PRACTICE EXERCISES UPDATED**: 4 new exercises covering wake word, global navigation, voice customization, and language switching
+  - **DEMO CONTENT REFRESHED**: Updated audio demos to reflect current app capabilities
+  - **ACCURATE FEATURE LIST**: Tutorial introduction now lists actual implemented features instead of outdated ones
+
 - **2025-08-10**: Enhanced Speech System for Object Detection with Anti-Overlap & Delay Controls
   - **SMOOTH SPEECH ANNOUNCEMENTS**: Added 1.5-second minimum delay between consecutive object announcements to prevent overlapping voices
   - **IMPROVED SPEECH CANCELLATION**: Enhanced `synth.cancel()` with small timeout delays to ensure proper cancellation before new speech
