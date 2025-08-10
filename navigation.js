@@ -1,7 +1,7 @@
 /**
- * BlindMate Navigation System - Google Maps Only
- * Uses only Google Directions API and Google Geocoding API
- * Voice-controlled turn-by-turn navigation with live GPS tracking
+ * BlindMate Enhanced Navigation System
+ * High-accuracy GPS tracking with optimized battery usage and human-friendly speech instructions
+ * Features: Smart tracking frequency, robust error handling, clear voice navigation
  */
 class UniversalNavigation {
     constructor() {
@@ -13,13 +13,24 @@ class UniversalNavigation {
         this.currentPosition = null;
         this.awaitingConfirmation = false;
         this.currentDestination = null;
+        this.lastLocationUpdateTime = null;
+        this.userSpeed = 0; // m/s
+        this.stationary = false;
+        this.destinationReached = false;
         
-        // Navigation configuration
+        // Enhanced navigation configuration
         this.config = {
-            stepProximityThreshold: 25, // meters - when to advance to next step
-            routeDeviationThreshold: 50, // meters - when to reroute
-            positionUpdateInterval: 3000, // ms
-            voicePreviewDistance: 100, // meters - when to announce "in X meters"
+            stepProximityThreshold: 15, // meters - when to advance to next step
+            routeDeviationThreshold: 30, // meters - when to reroute
+            destinationReachedThreshold: 10, // meters - when destination is reached
+            // Battery optimization thresholds
+            highFrequencyInterval: 2000, // ms - when user is moving
+            lowFrequencyInterval: 8000, // ms - when user is stationary
+            stationarySpeedThreshold: 0.5, // m/s - below this is considered stationary
+            // Voice instruction optimization
+            voicePreviewDistance: 50, // meters - when to announce "in X meters"
+            repeatInstructionDistance: 25, // meters - repeat instructions if user hasn't moved
+            urgentAnnouncementDistance: 10, // meters - for urgent turn warnings
         };
         
         // Google Maps integration
@@ -29,12 +40,14 @@ class UniversalNavigation {
         this.userMarker = null;
         this.googleMapsApiKey = null;
         
-        // Speech recognition and synthesis
+        // Enhanced speech recognition and synthesis
         this.recognition = null;
         this.confirmationRecognition = null;
         this.speechSynthesis = window.speechSynthesis;
         this.isSpeaking = false;
         this.speechQueue = [];
+        this.lastUtterance = null;
+        this.speechCancellationTimer = null;
         
         // COCO-SSD model for obstacle detection
         this.model = null;
@@ -43,14 +56,40 @@ class UniversalNavigation {
         this.detectionContext = null;
         this.camera = null;
         
-        // Permissions
+        // Enhanced permissions and error handling
         this.permissions = {
             camera: false,
             microphone: false,
             location: false
         };
+        this.errorStates = {
+            gpsLost: false,
+            speechFailed: false,
+            routingFailed: false
+        };
+        
+        // Mobile device detection
+        this.isMobile = this.detectMobileDevice();
         
         this.initialize();
+    }
+    
+    /**
+     * Detect if running on mobile device for battery optimization
+     */
+    detectMobileDevice() {
+        const userAgent = navigator.userAgent;
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) || 
+                         'ontouchstart' in window || 
+                         navigator.maxTouchPoints > 0;
+        
+        console.log('Mobile device detected:', isMobile, {
+            userAgent: userAgent,
+            ontouchstart: 'ontouchstart' in window,
+            maxTouchPoints: navigator.maxTouchPoints
+        });
+        
+        return isMobile;
     }
     
     /**
@@ -74,7 +113,31 @@ class UniversalNavigation {
         // Get Google Maps API key
         await this.getGoogleMapsApiKey();
         
-        console.log('Universal Navigation System initialized');
+        console.log('BlindMate Navigation System initialized');
+        
+        // Setup mobile-specific optimizations
+        if (this.isMobile) {
+            console.log('Checking mobile device for double-tap setup:', this.isMobile);
+            this.setupMobileOptimizations();
+        } else {
+            console.log('Desktop device - double-tap not enabled');
+        }
+    }
+    
+    /**
+     * Setup mobile-specific optimizations for battery life
+     */
+    setupMobileOptimizations() {
+        // Enable high accuracy mode for mobile devices
+        this.config.highAccuracyMode = true;
+        
+        // Reduce detection frequency on mobile to save battery
+        this.config.obstacleDetectionInterval = 3000;
+        
+        // Enable more aggressive stationary detection
+        this.config.stationaryTimeout = 30000; // 30 seconds
+        
+        console.log('Mobile optimizations enabled for battery efficiency');
     }
     
     /**
@@ -175,25 +238,89 @@ class UniversalNavigation {
     }
     
     /**
-     * Get current position with promise
+     * Get current position with enhanced accuracy and error handling
      */
     getCurrentPosition() {
         return new Promise((resolve, reject) => {
             if (!navigator.geolocation) {
-                reject(new Error('Geolocation not supported'));
+                const error = new Error('Geolocation not supported on this device');
+                this.handleLocationError(error);
+                reject(error);
                 return;
             }
             
             navigator.geolocation.getCurrentPosition(
-                position => resolve(position.coords),
-                error => reject(error),
+                position => {
+                    this.errorStates.gpsLost = false;
+                    console.log('GPS position acquired successfully');
+                    resolve(position.coords);
+                },
+                error => {
+                    this.handleLocationError(error);
+                    reject(error);
+                },
                 {
                     enableHighAccuracy: true,
                     timeout: 10000,
-                    maximumAge: 30000
+                    maximumAge: 0 // Always get fresh location
                 }
             );
         });
+    }
+    
+    /**
+     * Handle location errors with user-friendly messages and UI updates
+     */
+    handleLocationError(error) {
+        this.errorStates.gpsLost = true;
+        let errorMessage = '';
+        let uiMessage = '';
+        
+        switch(error.code) {
+            case error.PERMISSION_DENIED:
+                errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+                uiMessage = 'Location Permission Denied';
+                break;
+            case error.POSITION_UNAVAILABLE:
+                errorMessage = 'Location information unavailable. Please check your GPS connection.';
+                uiMessage = 'GPS Signal Unavailable';
+                break;
+            case error.TIMEOUT:
+                errorMessage = 'Location request timed out. Trying again...';
+                uiMessage = 'GPS Signal Weak';
+                break;
+            default:
+                errorMessage = 'Unknown location error occurred. Please try again.';
+                uiMessage = 'Location Error';
+                break;
+        }
+        
+        console.error('Location error:', error.message, errorMessage);
+        this.speakErrorMessage(errorMessage);
+        this.updateStatusDisplay(uiMessage, errorMessage);
+        this.showErrorInUI(uiMessage, errorMessage);
+    }
+    
+    /**
+     * Show error message in UI with clear visual indication
+     */
+    showErrorInUI(title, message) {
+        const errorElement = document.getElementById('errorDisplay');
+        if (errorElement) {
+            errorElement.innerHTML = `
+                <div class="error-message">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>${title}</strong>
+                    <p>${message}</p>
+                </div>
+            `;
+            errorElement.style.display = 'block';
+            
+            // Auto-hide after 10 seconds
+            setTimeout(() => {
+                errorElement.style.display = 'none';
+            }, 10000);
+        }
     }
     
     /**
@@ -305,7 +432,7 @@ class UniversalNavigation {
     }
     
     /**
-     * Setup UI event listeners
+     * Setup enhanced UI event listeners
      */
     setupUIEventListeners() {
         console.log('UI event listeners setup complete');
@@ -318,7 +445,38 @@ class UniversalNavigation {
             }
         });
         
-        // Click events for buttons
+        // Main navigation button (primary interface)
+        const mainBtn = document.getElementById('mainButton');
+        if (mainBtn) {
+            mainBtn.addEventListener('click', () => {
+                if (this.isNavigating) {
+                    this.stopNavigation();
+                } else {
+                    this.startListening();
+                }
+                this.updateMainButtonState();
+            });
+        }
+        
+        // Emergency stop button
+        const emergencyBtn = document.getElementById('emergencyStop');
+        if (emergencyBtn) {
+            emergencyBtn.addEventListener('click', () => {
+                this.emergencyStop();
+            });
+        }
+        
+        // Accessibility: Allow Enter key to activate main button
+        if (mainBtn) {
+            mainBtn.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    mainBtn.click();
+                }
+            });
+        }
+        
+        // Legacy button support
         const startNavBtn = document.getElementById('startNavigationBtn');
         if (startNavBtn) {
             startNavBtn.addEventListener('click', () => this.startListening());
@@ -328,6 +486,43 @@ class UniversalNavigation {
         if (stopNavBtn) {
             stopNavBtn.addEventListener('click', () => this.stopNavigation());
         }
+    }
+    
+    /**
+     * Update main button state based on navigation status
+     */
+    updateMainButtonState() {
+        const mainBtn = document.getElementById('mainButton');
+        if (!mainBtn) return;
+        
+        if (this.isNavigating) {
+            mainBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Navigation';
+            mainBtn.classList.add('navigating');
+            mainBtn.classList.remove('listening');
+        } else if (this.awaitingConfirmation) {
+            mainBtn.innerHTML = '<i class="fas fa-microphone"></i> Listening...';
+            mainBtn.classList.add('listening');
+            mainBtn.classList.remove('navigating');
+        } else {
+            mainBtn.innerHTML = '<i class="fas fa-microphone"></i> Start Listening';
+            mainBtn.classList.remove('listening', 'navigating');
+        }
+        
+        // Show/hide emergency stop button
+        const emergencyBtn = document.getElementById('emergencyStop');
+        if (emergencyBtn) {
+            emergencyBtn.style.display = this.isNavigating ? 'block' : 'none';
+        }
+    }
+    
+    /**
+     * Emergency stop with immediate feedback
+     */
+    emergencyStop() {
+        console.log('Emergency stop activated');
+        this.speakWithPriority('Navigation stopped immediately.', 'high');
+        this.stopNavigation();
+        this.updateMainButtonState();
     }
     
     /**
@@ -399,15 +594,26 @@ class UniversalNavigation {
     }
     
     /**
-     * Start navigation to destination
+     * Enhanced navigation startup with comprehensive error handling
      */
     async startNavigation(destination) {
         try {
+            // Reset navigation state
+            this.destinationReached = false;
+            this.urgentWarningGiven = false;
+            this.previewWarningGiven = false;
+            
             if (!this.currentPosition) {
-                this.currentPosition = await this.getCurrentPosition();
+                try {
+                    this.currentPosition = await this.getCurrentPosition();
+                } catch (error) {
+                    this.handleLocationError(error);
+                    return;
+                }
             }
             
             this.updateStatusDisplay('Getting directions...', 'Please wait');
+            this.speakWithPriority('Getting directions to your destination.', 'normal');
             
             const origin = `${this.currentPosition.latitude},${this.currentPosition.longitude}`;
             
@@ -424,16 +630,20 @@ class UniversalNavigation {
             const data = await response.json();
             
             if (!data.success) {
-                this.speak(data.message || 'Navigation failed. Please try again.');
-                this.updateStatusDisplay('Navigation failed', data.message);
+                const errorMessage = data.message || 'Navigation failed. Please try again.';
+                this.errorStates.routingFailed = true;
+                this.speakErrorMessage(errorMessage);
+                this.updateStatusDisplay('Navigation Failed', errorMessage);
+                this.showErrorInUI('Route Not Found', errorMessage);
                 return;
             }
             
             this.currentRoute = data;
             this.currentStepIndex = 0;
             this.isNavigating = true;
+            this.errorStates.routingFailed = false;
             
-            // Start continuous GPS tracking for navigation
+            // Start intelligent GPS tracking with battery optimization
             this.startContinuousGPSTracking();
             
             // Display route on map if available
@@ -447,14 +657,23 @@ class UniversalNavigation {
             // Enable obstacle detection during navigation
             this.startObstacleDetection();
             
-            // Show navigation controls
-            document.getElementById('navigationControls').style.display = 'block';
+            // Update UI state
+            this.updateMainButtonState();
             
-            console.log('Navigation started successfully');
+            // Show navigation info overlay
+            const navigationInfo = document.getElementById('navigationInfo');
+            if (navigationInfo) {
+                navigationInfo.style.display = 'block';
+            }
+            
+            console.log('Enhanced navigation started successfully');
             
         } catch (error) {
             console.error('Navigation start failed:', error);
-            this.speak('Failed to start navigation. Please check your connection and try again.');
+            this.errorStates.routingFailed = true;
+            const errorMessage = 'Failed to start navigation. Please check your connection and try again.';
+            this.speakErrorMessage(errorMessage);
+            this.showErrorInUI('Navigation Error', errorMessage);
         }
     }
     
@@ -477,7 +696,7 @@ class UniversalNavigation {
     }
     
     /**
-     * Announce current navigation step with optimized voice instructions
+     * Announce current navigation step with human-friendly voice instructions
      */
     announceCurrentStep() {
         if (!this.isNavigating || !this.currentRoute) return;
@@ -489,39 +708,109 @@ class UniversalNavigation {
         }
         
         const currentStep = steps[this.currentStepIndex];
+        if (!currentStep) return;
+        
+        // Reset warning flags for new step
+        this.urgentWarningGiven = false;
+        this.previewWarningGiven = false;
+        
         const instruction = this.optimizeVoiceInstruction(currentStep.instruction);
         const distance = this.simplifyDistance(currentStep.distance_value || currentStep.distance_meters || 0);
         
-        // Create short, clear voice instruction
-        const voiceInstruction = `${instruction} in ${distance}`;
+        // Create clear, conversational voice instruction like "Turn left in 20 meters"
+        let voiceInstruction = `${instruction}`;
+        if (distance && !instruction.toLowerCase().includes('arrive')) {
+            voiceInstruction = `${instruction} in ${distance}`;
+        }
         
-        this.speak(voiceInstruction);
+        this.speakWithPriority(voiceInstruction, 'normal');
         this.updateStatusDisplay(`Step ${this.currentStepIndex + 1} of ${steps.length}`, instruction);
+        this.updateNavigationDisplay(instruction, distance);
         
         console.log(`Navigation step ${this.currentStepIndex + 1}: ${voiceInstruction}`);
     }
     
     /**
-     * Optimize voice instructions for visually impaired users
+     * Update navigation display in UI
+     */
+    updateNavigationDisplay(instruction, distance) {
+        const currentStepElement = document.getElementById('currentStep');
+        const stepDistanceElement = document.getElementById('stepDistance');
+        
+        if (currentStepElement) {
+            currentStepElement.textContent = instruction;
+        }
+        
+        if (stepDistanceElement && distance) {
+            stepDistanceElement.textContent = `Distance: ${distance}`;
+        }
+        
+        // Show navigation info overlay
+        const navigationInfo = document.getElementById('navigationInfo');
+        if (navigationInfo) {
+            navigationInfo.style.display = 'block';
+        }
+    }
+    
+    /**
+     * Convert navigation data into human-friendly speech instructions
      */
     optimizeVoiceInstruction(instruction) {
-        // Simplify and shorten instructions for better accessibility
-        let optimized = instruction.toLowerCase();
+        let optimized = instruction.toLowerCase().trim();
         
-        // Replace common phrases with shorter ones
-        optimized = optimized.replace(/head\s+/gi, '');
-        optimized = optimized.replace(/continue\s+/gi, '');
-        optimized = optimized.replace(/proceed\s+/gi, '');
+        // Convert raw navigation data into conversational instructions
+        
+        // Handle turns with clear directional language
+        optimized = optimized.replace(/turn\s+slight\s+left/gi, 'bear left');
+        optimized = optimized.replace(/turn\s+slight\s+right/gi, 'bear right');
+        optimized = optimized.replace(/turn\s+sharp\s+left/gi, 'make a sharp left turn');
+        optimized = optimized.replace(/turn\s+sharp\s+right/gi, 'make a sharp right turn');
         optimized = optimized.replace(/turn\s+left/gi, 'turn left');
         optimized = optimized.replace(/turn\s+right/gi, 'turn right');
+        
+        // Handle straight movements
+        optimized = optimized.replace(/head\s+north/gi, 'go straight ahead');
+        optimized = optimized.replace(/head\s+south/gi, 'go straight ahead');
+        optimized = optimized.replace(/head\s+east/gi, 'go straight ahead');
+        optimized = optimized.replace(/head\s+west/gi, 'go straight ahead');
+        optimized = optimized.replace(/continue\s+straight/gi, 'keep going straight');
+        optimized = optimized.replace(/proceed\s+/gi, '');
+        optimized = optimized.replace(/continue\s+/gi, 'keep going ');
+        
+        // Simplify common phrases
         optimized = optimized.replace(/walk\s+/gi, '');
         optimized = optimized.replace(/go\s+/gi, '');
-        optimized = optimized.replace(/\s+on\s+/, ' on ');
-        optimized = optimized.replace(/toward\s+/gi, 'toward ');
-        optimized = optimized.replace(/destination\s+will\s+be\s+on\s+the\s+/gi, 'destination on ');
+        optimized = optimized.replace(/head\s+/gi, '');
+        optimized = optimized.replace(/use\s+the\s+/gi, 'take the ');
+        optimized = optimized.replace(/\s+toward\s+/gi, ' toward ');
+        optimized = optimized.replace(/\s+towards\s+/gi, ' toward ');
         
-        // Capitalize first letter
+        // Handle destination phrases
+        optimized = optimized.replace(/destination\s+will\s+be\s+on\s+the\s+/gi, 'your destination is on the ');
+        optimized = optimized.replace(/your\s+destination\s+is\s+/gi, 'you will arrive ');
+        
+        // Handle street/road references
+        optimized = optimized.replace(/\s+on\s+([A-Za-z\s]+)\s+road/gi, ' on $1 Road');
+        optimized = optimized.replace(/\s+on\s+([A-Za-z\s]+)\s+street/gi, ' on $1 Street');
+        optimized = optimized.replace(/\s+on\s+([A-Za-z\s]+)\s+avenue/gi, ' on $1 Avenue');
+        
+        // Add helpful distance context
+        optimized = optimized.replace(/^(.+)$/i, (match) => {
+            // Don't repeat if already contains distance context
+            if (match.includes('meter') || match.includes('km') || match.includes('mile')) {
+                return match;
+            }
+            return match;
+        });
+        
+        // Clean up multiple spaces and capitalize
+        optimized = optimized.replace(/\s+/g, ' ').trim();
         optimized = optimized.charAt(0).toUpperCase() + optimized.slice(1);
+        
+        // Ensure instruction ends properly
+        if (!optimized.endsWith('.') && !optimized.endsWith('!')) {
+            optimized += '.';
+        }
         
         return optimized;
     }
@@ -541,7 +830,7 @@ class UniversalNavigation {
     }
     
     /**
-     * Start continuous GPS tracking during navigation
+     * Start intelligent GPS tracking with battery optimization
      */
     startContinuousGPSTracking() {
         if (this.watchId) {
@@ -553,27 +842,103 @@ class UniversalNavigation {
                 this.updateNavigationPosition(position.coords);
             },
             (error) => {
-                console.error('GPS tracking error:', error);
-                this.speak('GPS signal lost. Please check your location settings.');
+                this.handleLocationError(error);
+                
+                // Retry GPS after error with exponential backoff
+                setTimeout(() => {
+                    if (this.isNavigating && !this.watchId) {
+                        console.log('Retrying GPS tracking after error...');
+                        this.startContinuousGPSTracking();
+                    }
+                }, 5000);
             },
             {
                 enableHighAccuracy: true,
                 timeout: 10000,
-                maximumAge: 5000
+                maximumAge: 0 // Always get fresh location for navigation
             }
         );
         
-        console.log('Continuous GPS tracking started for navigation');
+        console.log('Enhanced GPS tracking started with battery optimization');
     }
     
     /**
-     * Update position during navigation and check progress
+     * Calculate user speed and determine if stationary for battery optimization
+     */
+    calculateUserSpeed(newCoords) {
+        if (!this.lastLocationUpdateTime || !this.currentPosition) {
+            this.lastLocationUpdateTime = Date.now();
+            return 0;
+        }
+        
+        const now = Date.now();
+        const timeDelta = (now - this.lastLocationUpdateTime) / 1000; // seconds
+        
+        if (timeDelta < 1) return this.userSpeed; // Avoid too frequent calculations
+        
+        const distance = this.calculateDistance(
+            this.currentPosition.latitude, this.currentPosition.longitude,
+            newCoords.latitude, newCoords.longitude
+        );
+        
+        const speed = distance / timeDelta; // m/s
+        this.userSpeed = speed;
+        this.lastLocationUpdateTime = now;
+        
+        // Determine if user is stationary
+        const wasStationary = this.stationary;
+        this.stationary = speed < this.config.stationarySpeedThreshold;
+        
+        // Log speed changes for battery optimization
+        if (wasStationary !== this.stationary) {
+            console.log(`User movement changed: ${this.stationary ? 'Stationary' : 'Moving'} (Speed: ${speed.toFixed(2)} m/s)`);
+            this.optimizeTrackingFrequency();
+        }
+        
+        return speed;
+    }
+    
+    /**
+     * Optimize GPS tracking frequency based on user movement to save battery
+     */
+    optimizeTrackingFrequency() {
+        if (!this.isNavigating) return;
+        
+        // Restart tracking with optimized settings
+        if (this.watchId) {
+            navigator.geolocation.clearWatch(this.watchId);
+        }
+        
+        const trackingOptions = {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: this.stationary ? this.config.lowFrequencyInterval : 1000
+        };
+        
+        console.log(`Optimizing GPS tracking: ${this.stationary ? 'Low' : 'High'} frequency mode`);
+        
+        this.watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                this.updateNavigationPosition(position.coords);
+            },
+            (error) => {
+                this.handleLocationError(error);
+            },
+            trackingOptions
+        );
+    }
+    
+    /**
+     * Enhanced position update with destination detection and human-friendly instructions
      */
     updateNavigationPosition(coords) {
         if (!this.isNavigating || !this.currentRoute) return;
         
         const newLat = coords.latitude;
         const newLng = coords.longitude;
+        
+        // Calculate user speed for battery optimization
+        this.calculateUserSpeed(coords);
         
         // Update current position
         this.currentPosition = coords;
@@ -583,38 +948,110 @@ class UniversalNavigation {
             this.userMarker.setPosition({ lat: newLat, lng: newLng });
         }
         
+        // Check if destination is reached first (highest priority)
+        if (this.checkDestinationReached(newLat, newLng)) {
+            return; // Stop processing if destination reached
+        }
+        
         // Check if user reached current step
         this.checkStepProgress(newLat, newLng);
         
         // Check if user deviated from route
         this.checkRouteDeviation(newLat, newLng);
+        
+        // Provide proximity-based voice instructions
+        this.provideProximityInstructions(newLat, newLng);
     }
     
     /**
-     * Check if user has reached the current navigation step
+     * Check if user has reached the final destination
+     */
+    checkDestinationReached(lat, lng) {
+        if (!this.currentRoute || this.destinationReached) return false;
+        
+        const steps = this.currentRoute.route.steps;
+        const finalStep = steps[steps.length - 1];
+        
+        if (!finalStep || !finalStep.end_location) return false;
+        
+        const distanceToDestination = this.calculateDistance(
+            lat, lng, 
+            finalStep.end_location.lat, 
+            finalStep.end_location.lng
+        );
+        
+        if (distanceToDestination <= this.config.destinationReachedThreshold) {
+            this.destinationReached = true;
+            this.navigationComplete();
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Provide human-friendly proximity-based voice instructions
+     */
+    provideProximityInstructions(lat, lng) {
+        if (!this.currentRoute || this.currentStepIndex >= this.currentRoute.route.steps.length) return;
+        
+        const currentStep = this.currentRoute.route.steps[this.currentStepIndex];
+        if (!currentStep || !currentStep.end_location) return;
+        
+        const distanceToStepEnd = this.calculateDistance(
+            lat, lng,
+            currentStep.end_location.lat,
+            currentStep.end_location.lng
+        );
+        
+        // Provide urgent warning for immediate turns
+        if (distanceToStepEnd <= this.config.urgentAnnouncementDistance && !this.urgentWarningGiven) {
+            const instruction = this.optimizeVoiceInstruction(currentStep.instruction);
+            this.speakWithPriority(`${instruction} now!`, 'high');
+            this.urgentWarningGiven = true;
+        }
+        // Provide advance warning
+        else if (distanceToStepEnd <= this.config.voicePreviewDistance && !this.previewWarningGiven) {
+            const instruction = this.optimizeVoiceInstruction(currentStep.instruction);
+            const distance = this.simplifyDistance(distanceToStepEnd);
+            this.speakWithPriority(`${instruction} in ${distance}`, 'normal');
+            this.previewWarningGiven = true;
+        }
+    }
+    
+    /**
+     * Enhanced step progress checking with warning flag management
      */
     checkStepProgress(lat, lng) {
         if (!this.currentRoute || this.currentStepIndex >= this.currentRoute.route.steps.length) return;
         
         const currentStep = this.currentRoute.route.steps[this.currentStepIndex];
+        if (!currentStep || !currentStep.end_location) return;
+        
         const stepEndLat = currentStep.end_location.lat;
         const stepEndLng = currentStep.end_location.lng;
         
         // Calculate distance to step endpoint
         const distance = this.calculateDistance(lat, lng, stepEndLat, stepEndLng);
         
-        // If within 25 meters of step endpoint, advance to next step
-        if (distance < 25) {
+        // If within threshold of step endpoint, advance to next step
+        if (distance <= this.config.stepProximityThreshold) {
             this.currentStepIndex++;
+            
+            // Reset warning flags for next step
+            this.urgentWarningGiven = false;
+            this.previewWarningGiven = false;
             
             if (this.currentStepIndex >= this.currentRoute.route.steps.length) {
                 this.navigationComplete();
             } else {
-                // Announce next step
+                // Announce next step with human-friendly instruction
                 setTimeout(() => {
                     this.announceCurrentStep();
                 }, 1000);
             }
+            
+            console.log(`Advanced to navigation step ${this.currentStepIndex + 1}`);
         }
     }
     
@@ -861,13 +1298,16 @@ class UniversalNavigation {
     }
     
     /**
-     * Emergency stop navigation
+     * Enhanced navigation stop with complete state cleanup
      */
     stopNavigation() {
+        console.log('Stopping navigation with complete cleanup');
+        
         this.isNavigating = false;
         this.reroutingInProgress = false;
+        this.destinationReached = false;
         
-        // Stop GPS tracking
+        // Stop intelligent GPS tracking
         if (this.watchId) {
             navigator.geolocation.clearWatch(this.watchId);
             this.watchId = null;
@@ -876,7 +1316,18 @@ class UniversalNavigation {
         // Stop obstacle detection
         this.isDetecting = false;
         
-        // Hide navigation controls
+        // Hide navigation UI elements
+        const navigationInfo = document.getElementById('navigationInfo');
+        if (navigationInfo) {
+            navigationInfo.style.display = 'none';
+        }
+        
+        const emergencyBtn = document.getElementById('emergencyStop');
+        if (emergencyBtn) {
+            emergencyBtn.style.display = 'none';
+        }
+        
+        // Legacy support
         const navControls = document.getElementById('navigationControls');
         if (navControls) {
             navControls.style.display = 'none';
@@ -887,17 +1338,29 @@ class UniversalNavigation {
             this.directionsRenderer.setDirections(null);
         }
         
-        // Announce stop
-        this.speak('Navigation stopped.');
-        this.updateStatusDisplay('Ready', 'Navigation stopped');
+        // Cancel any current speech
+        if (this.speechSynthesis.speaking) {
+            this.speechSynthesis.cancel();
+        }
         
-        // Clear route data
+        // Announce stop
+        this.speakWithPriority('Navigation stopped.', 'high');
+        this.updateStatusDisplay('Ready to Navigate', 'Press the button or Volume Up key to start');
+        
+        // Clear route data and reset flags
         this.currentRoute = null;
         this.currentStepIndex = 0;
         this.currentDestination = null;
         this.awaitingConfirmation = false;
+        this.urgentWarningGiven = false;
+        this.previewWarningGiven = false;
+        this.userSpeed = 0;
+        this.stationary = false;
         
-        console.log('Navigation stopped by user');
+        // Update UI state
+        this.updateMainButtonState();
+        
+        console.log('Navigation stopped successfully');
     }
     
     /**
@@ -952,30 +1415,132 @@ class UniversalNavigation {
     }
     
     /**
-     * Speak text with priority queue
+     * Enhanced speech synthesis with smooth overlapping voice cancellation
      */
     speak(text, priority = 'normal') {
+        this.speakWithPriority(text, priority);
+    }
+    
+    /**
+     * Speak with priority and overlapping voice management
+     */
+    speakWithPriority(text, priority = 'normal') {
         console.log(`Speaking (${priority}): ${text}`);
         
-        // Cancel current speech if higher priority
-        if (priority === 'high' && this.speechSynthesis.speaking) {
-            this.speechSynthesis.cancel();
+        try {
+            // Cancel any pending speech cancellation
+            if (this.speechCancellationTimer) {
+                clearTimeout(this.speechCancellationTimer);
+                this.speechCancellationTimer = null;
+            }
+            
+            // Always cancel current speech before speaking new text
+            // This prevents overlapping voices and ensures clear communication
+            if (this.speechSynthesis.speaking || this.speechSynthesis.pending) {
+                this.speechSynthesis.cancel();
+                
+                // Small delay to ensure cancellation completes
+                setTimeout(() => {
+                    this.performSpeech(text, priority);
+                }, 100);
+            } else {
+                this.performSpeech(text, priority);
+            }
+            
+        } catch (error) {
+            console.error('Speech synthesis error:', error);
+            this.handleSpeechError(text);
         }
+    }
+    
+    /**
+     * Perform the actual speech synthesis
+     */
+    performSpeech(text, priority = 'normal') {
+        try {
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            // Optimize speech settings for accessibility
+            utterance.rate = 0.9; // Slightly slower for clarity
+            utterance.volume = 1.0;
+            utterance.pitch = 1.0;
+            utterance.lang = 'en-US';
+            
+            // Set up event handlers
+            utterance.onstart = () => {
+                this.isSpeaking = true;
+                this.errorStates.speechFailed = false;
+                console.log('Speech started successfully');
+            };
+            
+            utterance.onend = () => {
+                this.isSpeaking = false;
+                console.log('Speech ended normally');
+            };
+            
+            utterance.onerror = (event) => {
+                console.error('Speech synthesis error:', event.error);
+                this.handleSpeechError(text);
+            };
+            
+            // Store last utterance for reference
+            this.lastUtterance = utterance;
+            
+            // Speak the text
+            this.speechSynthesis.speak(utterance);
+            
+        } catch (error) {
+            console.error('Speech creation error:', error);
+            this.handleSpeechError(text);
+        }
+    }
+    
+    /**
+     * Handle speech synthesis errors with fallback options
+     */
+    handleSpeechError(originalText) {
+        this.errorStates.speechFailed = true;
+        this.isSpeaking = false;
         
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.volume = 1.0;
-        utterance.pitch = 1.0;
+        console.error('Speech synthesis failed for text:', originalText);
         
-        utterance.onstart = () => {
-            this.isSpeaking = true;
-        };
+        // Show the text in UI as fallback
+        this.showTextInUI(originalText);
         
-        utterance.onend = () => {
-            this.isSpeaking = false;
-        };
+        // Try to reinitialize speech synthesis
+        setTimeout(() => {
+            if ('speechSynthesis' in window) {
+                this.speechSynthesis = window.speechSynthesis;
+                console.log('Speech synthesis reinitialized after error');
+            }
+        }, 1000);
+    }
+    
+    /**
+     * Show text in UI when speech fails
+     */
+    showTextInUI(text) {
+        const textDisplay = document.getElementById('speechFallbackDisplay');
+        if (textDisplay) {
+            textDisplay.textContent = text;
+            textDisplay.style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                textDisplay.style.display = 'none';
+            }, 5000);
+        }
+    }
+    
+    /**
+     * Speak error messages with special handling
+     */
+    speakErrorMessage(errorText) {
+        // Use high priority for error messages
+        this.speakWithPriority(errorText, 'high');
         
-        this.speechSynthesis.speak(utterance);
+        // Also show in UI for redundancy
+        this.showTextInUI(errorText);
     }
     
     /**

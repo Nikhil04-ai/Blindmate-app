@@ -173,9 +173,105 @@
             }
         }
         
+        /* Enhanced error display */
+        .error-display {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(220, 53, 69, 0.95);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+            max-width: 90%;
+            text-align: center;
+        }
+        
+        .error-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .error-message i {
+            font-size: 1.5rem;
+        }
+        
+        .error-message strong {
+            font-size: 1.1rem;
+        }
+        
+        .error-message p {
+            margin: 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        /* Speech fallback display */
+        .speech-fallback {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 123, 255, 0.95);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+            max-width: 90%;
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+        
+        /* Enhanced navigation info overlay */
+        .navigation-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.85);
+            padding: 20px;
+            border-radius: 15px;
+            display: none;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        
+        .navigation-info h4 {
+            margin: 0 0 10px 0;
+            color: #28a745;
+            font-size: 1.1rem;
+        }
+        
+        .navigation-info div {
+            margin: 5px 0;
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+        
+        #currentStep {
+            font-weight: bold;
+            color: #ffffff;
+        }
+        
+        #stepDistance {
+            color: #ffc107;
+            font-size: 0.9rem;
+        }
+        
         /* High contrast accessibility */
         @media (prefers-contrast: high) {
             .main-button {
+                border: 2px solid white;
+            }
+            
+            .error-display, .speech-fallback {
                 border: 2px solid white;
             }
         }
@@ -189,6 +285,19 @@
             @keyframes pulse {
                 0%, 100% { box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4); }
             }
+        }
+        
+        /* Screen reader accessibility */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
     </style>
 </head>
@@ -204,9 +313,10 @@
                 <i class="fas fa-eye"></i> Detecting Objects
             </div>
             
-            <!-- Navigation Info Overlay -->
+            <!-- Enhanced Navigation Info Overlay -->
             <div id="navigationInfo" class="navigation-info">
-                <div id="currentStep"></div>
+                <h4><i class="fas fa-route"></i> Current Direction</h4>
+                <div id="currentStep">Ready to navigate</div>
                 <div id="stepDistance"></div>
             </div>
             
@@ -229,6 +339,19 @@
             </button>
         </div>
     </div>
+
+    <!-- Enhanced Error Display -->
+    <div id="errorDisplay" class="error-display" role="alert" aria-live="assertive">
+        <!-- Error messages will be dynamically inserted here -->
+    </div>
+
+    <!-- Speech Fallback Display -->
+    <div id="speechFallbackDisplay" class="speech-fallback" role="status" aria-live="polite">
+        <!-- Speech fallback text will be displayed here when speech synthesis fails -->
+    </div>
+
+    <!-- Screen reader announcements for accessibility -->
+    <div id="srAnnouncements" class="sr-only" role="status" aria-live="polite"></div>
 
     <script src="navigation.js"></script>
 </body>
