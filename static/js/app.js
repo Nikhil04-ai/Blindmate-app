@@ -1647,8 +1647,12 @@ class BlindMate {
     announceDetectionsSmart(predictions) {
         const now = Date.now();
         
-        // Respect global announcement cooldown
-        if (now - this.lastAnnouncement < this.announcementInterval) {
+        // Respect global announcement cooldown - longer during navigation to avoid conflicts
+        const currentInterval = (this.isNavigating && this.currentRoute) ? 
+            this.announcementInterval * 1.5 : // 7.5 seconds during navigation
+            this.announcementInterval;        // 5 seconds during normal detection
+            
+        if (now - this.lastAnnouncement < currentInterval) {
             return;
         }
         
@@ -1727,48 +1731,22 @@ class BlindMate {
                 };
             });
             
-            // Create contextual announcement
+            // Create contextual announcement with specific object names
             let announcement = '';
-            
-            // Debug: Log navigation state
-            console.log('Navigation state check:', {
-                isNavigating: this.isNavigating,
-                hasRoute: !!this.currentRoute,
-                objectCount: objectsWithDistance.length
+            objectsWithDistance.forEach((obj, index) => {
+                if (index > 0) announcement += '. Also, ';
+                
+                // More natural language for all objects
+                if (obj.name === 'person') {
+                    announcement += `person ${obj.position}, ${obj.distance}`;
+                } else {
+                    announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
+                }
             });
             
-            // During navigation, use "obstacle detected" instead of specific object names
-            if (this.isNavigating && this.currentRoute) {
-                if (objectsWithDistance.length === 1) {
-                    const obj = objectsWithDistance[0];
-                    announcement = `Obstacle detected ${obj.position}, ${obj.distance}`;
-                } else {
-                    // Multiple obstacles
-                    announcement = 'Multiple obstacles detected';
-                    objectsWithDistance.forEach((obj, index) => {
-                        if (index === 0) announcement += ': ';
-                        else if (index === objectsWithDistance.length - 1) announcement += ' and ';
-                        else announcement += ', ';
-                        announcement += `${obj.position}`;
-                    });
-                }
-                console.log('Navigation mode: Using obstacle detection announcement');
-            } else {
-                // Normal detection mode - use specific object names
-                objectsWithDistance.forEach((obj, index) => {
-                    if (index > 0) announcement += '. Also, ';
-                    
-                    // More natural language
-                    if (obj.name === 'person') {
-                        announcement += `person ${obj.position}, ${obj.distance}`;
-                    } else {
-                        announcement += `${obj.name} ${obj.position}, ${obj.distance}`;
-                    }
-                });
-                console.log('Normal mode: Using specific object names');
-            }
-            
-            this.speak(announcement, false, true); // Mark as object announcement for special delay handling
+            // During navigation, treat object detection as higher priority to avoid conflicts with turn instructions
+            const isNavigationMode = this.isNavigating && this.currentRoute;
+            this.speak(announcement, isNavigationMode, true); // Higher priority during navigation
             this.lastAnnouncement = now;
         }
     }
@@ -2763,6 +2741,13 @@ class BlindMate {
         try {
             // Cancel any ongoing speech immediately to prevent overlaps
             this.synth.cancel();
+            
+            // Clear any pending object announcements to avoid queue buildup
+            if (this.speechDelayTimer) {
+                clearTimeout(this.speechDelayTimer);
+                this.speechDelayTimer = null;
+            }
+            this.pendingAnnouncement = null;
             
             // Small delay to ensure cancellation is processed
             setTimeout(() => {
