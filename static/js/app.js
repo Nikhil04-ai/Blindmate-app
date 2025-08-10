@@ -2673,6 +2673,14 @@ class BlindMate {
             return;
         }
 
+        // Use global speech coordinator if navigation system exists
+        if (window.blindMateNavigation && window.blindMateNavigation.speak) {
+            console.log('Delegating speech to navigation system:', text);
+            const navPriority = priority ? 'high' : isObjectAnnouncement ? 'normal' : 'normal';
+            window.blindMateNavigation.speak(text, navPriority);
+            return;
+        }
+
         const now = Date.now();
         
         // Handle object announcements with special delay logic

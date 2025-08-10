@@ -1780,30 +1780,15 @@ class UniversalNavigation {
      * Start Real-time Obstacle Alert System
      */
     startObstacleAlertSystem() {
-        console.log('Starting real-time obstacle alert system');
+        console.log('Obstacle detection handled by main app - skipping navigation system obstacle detection');
         
-        if (!this.model) {
-            console.warn('COCO-SSD model not loaded, obstacle alerts disabled');
-            return;
-        }
+        // Disable navigation system obstacle detection to prevent conflicts
+        // The main app (app.js) will handle all object detection
+        this.obstacleAlertEnabled = false;
+        this.isDetecting = false;
         
-        if (!this.camera) {
-            console.warn('Camera not available, obstacle alerts disabled');
-            return;
-        }
-        
-        this.obstacleAlertEnabled = true;
-        this.isDetecting = true;
-        
-        // Start obstacle detection at configured frequency
-        this.obstacleDetectionInterval = setInterval(() => {
-            if (this.isNavigating && this.obstacleAlertEnabled) {
-                this.detectObstacles();
-            }
-        }, this.config.obstacleDetectionFrequency);
-        
-        this.speakWithPriority('Obstacle alert system activated', 'medium');
-        console.log('Obstacle alert system started');
+        // Don't start interval - let main app handle it
+        console.log('Main app will handle all object detection during navigation');
     }
     
     /**
