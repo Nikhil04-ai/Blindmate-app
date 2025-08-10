@@ -224,6 +224,14 @@
                                 Emergency Stop Navigation
                             </button>
                         </div>
+                        
+                        <!-- Debug Controls (for troubleshooting) -->
+                        <div class="mt-2">
+                            <button id="testVoiceBtn" class="btn btn-secondary btn-sm w-100" onclick="if(window.navigation) window.navigation.testVoiceRecognition()">
+                                <i class="fas fa-microphone-slash" aria-hidden="true"></i>
+                                Test Voice Recognition
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

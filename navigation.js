@@ -382,26 +382,54 @@ class BlindMateNavigation {
      */
     setupSpeechRecognition() {
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            console.error('Speech recognition not supported');
+            console.error('Speech recognition not supported in this browser');
+            this.speak('Voice commands are not supported in this browser. Please use Chrome or Edge.', 'high');
             return;
         }
         
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        console.log('Initializing speech recognition...');
         
-        // Main navigation command recognition
-        this.recognition = new SpeechRecognition();
-        this.recognition.continuous = false;
-        this.recognition.interimResults = false;
-        this.recognition.lang = 'en-US';
-        
-        this.recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript.toLowerCase().trim();
-            console.log('Navigation command received:', transcript);
+        try {
+            // Main navigation command recognition
+            this.recognition = new SpeechRecognition();
+            this.recognition.continuous = false;
+            this.recognition.interimResults = false;
+            this.recognition.lang = 'en-US';
+            this.recognition.maxAlternatives = 1;
             
-            if (this.awaitingConfirmation) {
-                this.handleConfirmationResponse(transcript);
-            } else {
-                this.handleNavigationCommand(transcript);
+            console.log('Speech recognition object created successfully');
+        } catch (error) {
+            console.error('Failed to create speech recognition object:', error);
+            this.speak('Voice recognition setup failed. Please refresh the page.', 'high');
+            return;
+        }
+        
+        this.recognition.onstart = () => {
+            console.log('Speech recognition started successfully');
+            this.currentState = 'listening';
+            this.updateStatusDisplay('Listening...', 'Speak now - say your destination');
+        };
+
+        this.recognition.onresult = (event) => {
+            try {
+                if (event.results && event.results[0] && event.results[0][0]) {
+                    const transcript = event.results[0][0].transcript.toLowerCase().trim();
+                    const confidence = event.results[0][0].confidence;
+                    console.log('Navigation command received:', transcript, 'Confidence:', confidence);
+                    
+                    if (this.awaitingConfirmation) {
+                        this.handleConfirmationResponse(transcript);
+                    } else {
+                        this.handleNavigationCommand(transcript);
+                    }
+                } else {
+                    console.error('No speech results received');
+                    this.speak('No speech detected. Please try again.', 'normal');
+                }
+            } catch (error) {
+                console.error('Error processing speech result:', error);
+                this.speak('Error processing voice command. Please try again.', 'normal');
             }
         };
         
@@ -448,15 +476,31 @@ class BlindMateNavigation {
         };
         
         // Separate recognition for confirmations
-        this.confirmationRecognition = new SpeechRecognition();
-        this.confirmationRecognition.continuous = false;
-        this.confirmationRecognition.interimResults = false;
-        this.confirmationRecognition.lang = 'en-US';
-        
-        this.confirmationRecognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript.toLowerCase().trim();
-            this.handleConfirmationResponse(transcript);
-        };
+        try {
+            this.confirmationRecognition = new SpeechRecognition();
+            this.confirmationRecognition.continuous = false;
+            this.confirmationRecognition.interimResults = false;
+            this.confirmationRecognition.lang = 'en-US';
+            this.confirmationRecognition.maxAlternatives = 1;
+            
+            this.confirmationRecognition.onstart = () => {
+                console.log('Confirmation recognition started');
+            };
+            
+            this.confirmationRecognition.onresult = (event) => {
+                try {
+                    if (event.results && event.results[0] && event.results[0][0]) {
+                        const transcript = event.results[0][0].transcript.toLowerCase().trim();
+                        console.log('Confirmation received:', transcript);
+                        this.handleConfirmationResponse(transcript);
+                    }
+                } catch (error) {
+                    console.error('Error processing confirmation result:', error);
+                }
+            };
+        } catch (error) {
+            console.error('Failed to create confirmation recognition:', error);
+        }
         
         this.confirmationRecognition.onerror = (event) => {
             console.error('Confirmation speech recognition error:', event.error);
@@ -536,29 +580,39 @@ class BlindMateNavigation {
         this.updateMainButton('listening');
         
         try {
-            // Ensure previous recognition is stopped
-            if (this.recognition) {
-                this.recognition.abort();
+            // Check if recognition object exists
+            if (!this.recognition) {
+                console.error('Speech recognition not initialized');
+                this.speak('Voice recognition not ready. Please refresh the page.', 'high');
+                return;
             }
             
-            // Small delay to ensure clean start
-            setTimeout(() => {
-                try {
-                    this.recognition.start();
-                    console.log('Voice recognition started successfully');
-                } catch (error) {
-                    console.error('Speech recognition delayed start error:', error);
-                    this.speak('Voice recognition failed to start. Please try again.', 'high');
-                    this.currentState = 'idle';
-                    this.updateMainButton('idle');
-                }
-            }, 100);
+            console.log('Starting voice recognition...');
+            
+            // Start recognition immediately (no delay needed)
+            this.recognition.start();
             
         } catch (error) {
             console.error('Speech recognition start error:', error);
-            this.speak('Unable to start voice recognition. Please try again.', 'high');
-            this.currentState = 'idle';
-            this.updateMainButton('idle');
+            
+            if (error.name === 'InvalidStateError') {
+                console.log('Recognition already running, stopping and restarting...');
+                try {
+                    this.recognition.abort();
+                    setTimeout(() => {
+                        this.recognition.start();
+                    }, 100);
+                } catch (retryError) {
+                    console.error('Retry failed:', retryError);
+                    this.speak('Voice recognition error. Please try again.', 'high');
+                    this.currentState = 'idle';
+                    this.updateMainButton('idle');
+                }
+            } else {
+                this.speak('Unable to start voice recognition. Please try again.', 'high');
+                this.currentState = 'idle';
+                this.updateMainButton('idle');
+            }
         }
     }
     
@@ -1566,6 +1620,32 @@ class BlindMateNavigation {
         } else {
             this.speak('Please specify a destination for navigation', 'normal');
         }
+    }
+    
+    /**
+     * Test speech recognition functionality - for debugging
+     */
+    testVoiceRecognition() {
+        console.log('Testing voice recognition...');
+        
+        if (!this.recognition) {
+            console.error('Speech recognition not initialized');
+            this.speak('Voice recognition not available. Please refresh the page.', 'high');
+            return;
+        }
+        
+        // Test basic functionality
+        this.speak('Testing voice recognition. Say hello after the beep.', 'normal');
+        
+        setTimeout(() => {
+            try {
+                this.recognition.start();
+                console.log('Test recognition started');
+            } catch (error) {
+                console.error('Test recognition failed to start:', error);
+                this.speak('Voice recognition test failed. Error: ' + error.message, 'high');
+            }
+        }, 2000);
     }
 }
 
