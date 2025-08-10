@@ -2,7 +2,7 @@ import os
 import logging
 import requests
 import re
-from flask import Flask, request, jsonify, render_template_string, session
+from flask import Flask, request, jsonify, render_template, session, send_from_directory
 from flask_cors import CORS
 from gemini_service import GeminiService
 
@@ -15,8 +15,10 @@ logging.basicConfig(
     ]
 )
 
-# Create Flask app
-app = Flask(__name__)
+# Create Flask app with proper template and static folders
+app = Flask(__name__, 
+            template_folder='templates',
+            static_folder='static')
 app.secret_key = os.environ.get("SESSION_SECRET", "blindmate-secret-key-2024")
 
 # Enable CORS for frontend communication
@@ -29,71 +31,41 @@ gemini_service = GeminiService()
 def index():
     """Serve the main application page"""
     try:
-        with open('index.html', 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        return html_content
-    except FileNotFoundError:
+        return render_template('index.html')
+    except Exception as e:
+        logging.error(f"Error serving index.html: {e}")
         return "Application files not found", 404
 
-@app.route('/styles.css')
-def styles():
-    """Serve CSS file"""
-    try:
-        with open('styles.css', 'r', encoding='utf-8') as f:
-            css_content = f.read()
-        return css_content, 200, {'Content-Type': 'text/css'}
-    except FileNotFoundError:
-        return "CSS file not found", 404
-
-@app.route('/app.js')
-def app_js():
-    """Serve JavaScript file"""
-    try:
-        with open('app.js', 'r', encoding='utf-8') as f:
-            js_content = f.read()
-        return js_content, 200, {'Content-Type': 'application/javascript'}
-    except FileNotFoundError:
-        return "JavaScript file not found", 404
-
-@app.route('/navigation.js')
-def navigation_js():
-    """Serve new navigation JavaScript file"""
-    try:
-        with open('navigation.js', 'r', encoding='utf-8') as f:
-            js_content = f.read()
-        return js_content, 200, {'Content-Type': 'application/javascript'}
-    except FileNotFoundError:
-        return "Navigation JavaScript file not found", 404
-
-@app.route('/sw.js')
-def service_worker():
-    """Serve service worker for PWA capabilities"""
-    try:
-        with open('sw.js', 'r', encoding='utf-8') as f:
-            sw_content = f.read()
-        return sw_content, 200, {'Content-Type': 'application/javascript'}
-    except FileNotFoundError:
-        return "Service worker not found", 404
+# Static files are now served automatically by Flask from /static folder
 
 @app.route('/tutorial')
 def tutorial():
     """Serve the onboarding tutorial page"""
     try:
-        with open('onboarding.html', 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        return html_content
-    except FileNotFoundError:
+        return render_template('onboarding.html')
+    except Exception as e:
+        logging.error(f"Error serving onboarding.html: {e}")
         return "Tutorial not found", 404
 
-@app.route('/onboarding.js')
-def onboarding_js():
-    """Serve onboarding JavaScript file"""
+@app.route('/navigation')
+def navigation():
+    """Serve navigation page"""
     try:
-        with open('onboarding.js', 'r', encoding='utf-8') as f:
-            js_content = f.read()
-        return js_content, 200, {'Content-Type': 'application/javascript'}
-    except FileNotFoundError:
-        return "Onboarding JavaScript file not found", 404
+        return render_template('navigation.html')
+    except Exception as e:
+        logging.error(f"Error serving navigation.html: {e}")
+        return "Navigation page not found", 404
+
+@app.route('/simple-navigation')
+def simple_navigation():
+    """Serve simple navigation page"""
+    try:
+        return render_template('simple_navigation.html')
+    except Exception as e:
+        logging.error(f"Error serving simple_navigation.html: {e}")
+        return "Simple navigation page not found", 404
+
+# JavaScript files are now served automatically by Flask from /static folder
 
 @app.route('/api/process-command', methods=['POST'])
 def process_command():
