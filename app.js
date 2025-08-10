@@ -319,7 +319,7 @@ class BlindMate {
             // Initialize speech recognition
             this.initSpeechRecognition();
             
-            // Load TensorFlow model
+            // Load TensorFlow model (optional - app works without it)
             await this.loadModel();
             
             // Start voice interaction
@@ -792,21 +792,46 @@ class BlindMate {
         try {
             this.updateStatus('Loading AI detection model...', 'warning');
             
+            // Check if TensorFlow.js is available
+            if (typeof tf === 'undefined') {
+                throw new Error('TensorFlow.js not loaded');
+            }
+            
+            // Set backend to CPU if WebGL is not available
+            if (!tf.ENV.getBool('WEBGL_VERSION')) {
+                console.warn('WebGL not available, falling back to CPU backend');
+                await tf.setBackend('cpu');
+            }
+            
             // Ensure TensorFlow.js is ready
             await tf.ready();
+            
+            // Check if COCO-SSD is available
+            if (typeof cocoSsd === 'undefined') {
+                throw new Error('COCO-SSD model not loaded');
+            }
             
             // Load COCO-SSD model
             this.model = await cocoSsd.load();
             
             this.updateStatus('AI model loaded successfully!', 'success');
-            this.elements.loadingOverlay.style.display = 'none';
+            if (this.elements.loadingOverlay) {
+                this.elements.loadingOverlay.style.display = 'none';
+            }
             
             console.log('COCO-SSD model loaded successfully');
             
         } catch (error) {
             console.error('Error loading model:', error);
-            this.updateStatus('Failed to load AI model. Please refresh the page.', 'danger');
-            throw error;
+            this.updateStatus('Object detection disabled. Voice commands and navigation still available.', 'warning');
+            
+            // Hide loading overlay even on error
+            if (this.elements.loadingOverlay) {
+                this.elements.loadingOverlay.style.display = 'none';
+            }
+            
+            // Don't throw error - allow app to continue without object detection
+            console.log('Continuing without object detection...');
         }
     }
 
@@ -1021,8 +1046,8 @@ class BlindMate {
             
         } catch (error) {
             console.error('Error starting detection:', error);
-            this.updateStatus('Camera access denied or unavailable.', 'danger');
-            this.speak('Sorry, I cannot access the camera. Please check your permissions.');
+            this.updateStatus('Camera unavailable. Voice commands and navigation are still active.', 'warning');
+            this.speak('Camera is not available, but voice commands and navigation are ready to use.');
         }
     }
 
