@@ -52,6 +52,13 @@ class BlindMate {
         this.lastDetections = [];
         this.lastAnnouncement = 0;
         this.announcementInterval = 5000; // 5 seconds between announcements
+        
+        // Smart object announcement tracking system
+        this.objectAnnouncementCount = new Map(); // Track how many times each object was announced
+        this.objectLastSeen = new Map(); // Track when each object was last seen
+        this.objectDisappearanceTime = new Map(); // Track when object disappeared
+        this.maxAnnouncements = 3; // Maximum announcements per object
+        this.cooldownPeriod = 7000; // 7 seconds cooldown after object disappears
         this.lastSpeechTime = 0;
         this.speechCooldown = 2000; // 2 seconds cooldown between speech
         this.isSpeaking = false;
@@ -1101,7 +1108,13 @@ class BlindMate {
             
             if (validPredictions.length > 0) {
                 this.drawPredictions(validPredictions);
-                this.announceDetections(validPredictions);
+                
+                // Update object tracking and announce with smart system
+                this.updateObjectTracking(validPredictions);
+                this.announceDetectionsSmart(validPredictions);
+            } else {
+                // No objects detected, update tracking for disappearances
+                this.updateObjectTracking([]);
             }
             
             // Continue detection loop
@@ -1167,10 +1180,54 @@ class BlindMate {
     /**
      * Announce detected objects via speech with priority system
      */
-    announceDetections(predictions) {
+    /**
+     * Update object tracking system for smart announcements
+     */
+    updateObjectTracking(predictions) {
+        const now = Date.now();
+        const currentDetectedObjects = new Set();
+        
+        // Extract object names from current predictions
+        predictions.forEach(prediction => {
+            currentDetectedObjects.add(prediction.class);
+        });
+        
+        // Update last seen time for currently detected objects
+        for (const objectName of currentDetectedObjects) {
+            this.objectLastSeen.set(objectName, now);
+            
+            // Remove from disappearance tracking if it reappeared
+            if (this.objectDisappearanceTime.has(objectName)) {
+                this.objectDisappearanceTime.delete(objectName);
+            }
+        }
+        
+        // Check for disappeared objects and mark their disappearance time
+        for (const [objectName, lastSeenTime] of this.objectLastSeen.entries()) {
+            if (!currentDetectedObjects.has(objectName) && !this.objectDisappearanceTime.has(objectName)) {
+                // Object just disappeared, mark the time
+                this.objectDisappearanceTime.set(objectName, now);
+            }
+        }
+        
+        // Clean up objects that have been gone for longer than cooldown period
+        for (const [objectName, disappearanceTime] of this.objectDisappearanceTime.entries()) {
+            if (now - disappearanceTime > this.cooldownPeriod) {
+                // Reset announcement count for objects that have been gone long enough
+                this.objectAnnouncementCount.delete(objectName);
+                this.objectLastSeen.delete(objectName);
+                this.objectDisappearanceTime.delete(objectName);
+            }
+        }
+    }
+
+    /**
+     * Smart announcement system with 3-announcement limit and cooldown
+     */
+    announceDetectionsSmart(predictions) {
         const now = Date.now();
         
-        // Throttle announcements
+        // Respect global announcement cooldown
         if (now - this.lastAnnouncement < this.announcementInterval) {
             return;
         }
@@ -1178,8 +1235,41 @@ class BlindMate {
         // Priority objects (most important for navigation)
         const priorityObjects = ['person', 'chair', 'car', 'truck', 'bus', 'bicycle', 'motorcycle'];
         
+        // Filter predictions that can be announced based on smart tracking
+        const announcablePredictions = predictions.filter(prediction => {
+            const announcementCount = this.objectAnnouncementCount.get(prediction.class) || 0;
+            
+            if (announcementCount >= this.maxAnnouncements) {
+                return false; // Already announced 3 times
+            }
+            
+            // Check if object was missing and came back (reset scenario)
+            const disappearanceTime = this.objectDisappearanceTime.get(prediction.class);
+            if (disappearanceTime && (now - disappearanceTime) < this.cooldownPeriod) {
+                return false; // Object reappeared too quickly, don't announce
+            }
+            
+            return true;
+        });
+        
+        if (announcablePredictions.length === 0) {
+            // Debug: Show why objects weren't announced
+            predictions.forEach(prediction => {
+                const count = this.objectAnnouncementCount.get(prediction.class) || 0;
+                const disappearanceTime = this.objectDisappearanceTime.get(prediction.class);
+                const timeSinceDisappearance = disappearanceTime ? (now - disappearanceTime) : null;
+                
+                if (count >= this.maxAnnouncements) {
+                    console.log(`${prediction.class}: Max announcements reached (${count}/${this.maxAnnouncements})`);
+                } else if (timeSinceDisappearance !== null && timeSinceDisappearance < this.cooldownPeriod) {
+                    console.log(`${prediction.class}: In cooldown (${Math.round(timeSinceDisappearance/1000)}s/${Math.round(this.cooldownPeriod/1000)}s)`);
+                }
+            });
+            return; // No objects to announce
+        }
+        
         // Sort predictions by priority and distance
-        const sortedPredictions = predictions.sort((a, b) => {
+        const sortedPredictions = announcablePredictions.sort((a, b) => {
             const aPriority = priorityObjects.includes(a.class) ? 1 : 0;
             const bPriority = priorityObjects.includes(b.class) ? 1 : 0;
             
@@ -1197,6 +1287,15 @@ class BlindMate {
         const importantObjects = sortedPredictions.slice(0, 2);
         
         if (importantObjects.length > 0) {
+            // Increment announcement count for announced objects
+            importantObjects.forEach(prediction => {
+                const currentCount = this.objectAnnouncementCount.get(prediction.class) || 0;
+                this.objectAnnouncementCount.set(prediction.class, currentCount + 1);
+                
+                // Debug logging for smart announcement system
+                console.log(`Smart Announcement: ${prediction.class} (count: ${currentCount + 1}/${this.maxAnnouncements})`);
+            });
+            
             const objectsWithDistance = importantObjects.map(prediction => {
                 const distance = this.estimateDistance(prediction.bbox);
                 const position = this.getRelativePosition(prediction.bbox);
@@ -1224,6 +1323,14 @@ class BlindMate {
             this.speak(announcement);
             this.lastAnnouncement = now;
         }
+    }
+
+    /**
+     * Legacy announcement method for backwards compatibility
+     */
+    announceDetections(predictions) {
+        // Redirect to smart announcement system
+        this.announceDetectionsSmart(predictions);
     }
     
     /**
