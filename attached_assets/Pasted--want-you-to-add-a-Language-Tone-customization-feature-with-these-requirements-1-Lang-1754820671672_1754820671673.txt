@@ -1,0 +1,35 @@
+ want you to add a **Language & Tone customization feature** with these requirements:  
+
+1. **Language Change Feature**  
+   - Allow the user to choose or speak a command like “Change language to Hindi” or “Change language to Spanish” and store the selected language in the session.  
+   - When the language changes, all future voice outputs (TTS) and voice command responses from Gemini should be in that language.  
+   - Use Gemini API’s language parameter for generating text in the chosen language.  
+   - Update the frontend UI to have a dropdown or voice command option for language switching.
+
+2. **Tone of Voice Change Feature**  
+   - Allow the user to choose or speak a command like “Change voice tone to friendly”, “Change voice tone to formal”, or “Change voice tone to robotic”.  
+   - Pass a `tone` parameter to Gemini API prompts (e.g., “Respond in a friendly tone in {language}”).  
+   - Ensure TTS output matches the tone by modifying the SSML tags or voice style in Google Cloud TTS (or equivalent TTS engine).  
+   - Store the tone preference in session/local storage so it persists until changed.
+
+3. **Backend Changes (Flask)**  
+   - Modify `/api/process-command` so it detects language/tone change commands.  
+   - Keep `current_language` and `current_tone` as variables stored per user session.  
+   - Whenever Gemini is called, prepend the prompt with `"Respond in {current_language} using a {current_tone} tone."`
+
+4. **Frontend Changes (JavaScript)**  
+   - Add UI controls (dropdowns or buttons) for changing language and tone manually.  
+   - Also allow voice commands to change language/tone.  
+   - Whenever language/tone is changed, notify the backend to update session values.
+
+5. **Example Voice Commands**  
+   - “Speak in Hindi now.” → Switches to Hindi.  
+   - “Change tone to friendly.” → Switches voice style to friendly.  
+   - “Switch to formal English.” → Changes both tone and language.
+
+6. **Testing**  
+   - Test with at least 3 languages and 3 tones.  
+   - Ensure TTS voices change accordingly.  
+   - Ensure Gemini API responses match the tone/style.
+
+Keep my existing object detection, navigation, and other features untouched — only add the language + tone customization feature.
