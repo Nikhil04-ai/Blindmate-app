@@ -2038,11 +2038,12 @@ class BlindMate {
             console.log('Destination:', destination);
             
             // Use the enhanced navigation system that handles geocoding + directions
-            if (window.blindMateNavigation) {
-                // Use the enhanced navigation system
+            if (window.blindMateNavigation && typeof window.blindMateNavigation.startNavigation === 'function') {
+                console.log('Using enhanced navigation system');
                 window.blindMateNavigation.currentDestination = destination;
                 await window.blindMateNavigation.startNavigation(destination);
             } else {
+                console.log('Enhanced navigation not available, using fallback');
                 // Fallback to direct API call
                 const response = await fetch('/api/directions', {
                     method: 'POST',

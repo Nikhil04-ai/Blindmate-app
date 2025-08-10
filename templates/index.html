@@ -323,8 +323,9 @@
             // Initialize Universal Navigation System
             navigation = new UniversalNavigation();
             
-            // Make navigation globally accessible
+            // Make navigation globally accessible with multiple aliases
             window.navigation = navigation;
+            window.blindMateNavigation = navigation;
             
             console.log('BlindMate Navigation System initialized');
         });
