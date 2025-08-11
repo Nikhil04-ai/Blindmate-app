@@ -3,7 +3,7 @@ services:
     name: blindmate
     env: python
     plan: free
-    buildCommand: "pip install -r requirements-local.txt"
+    buildCommand: "uv pip install -r requirements-local.txt"
     startCommand: "gunicorn --bind 0.0.0.0:$PORT main:app"
     envVars:
       - key: PYTHON_VERSION
