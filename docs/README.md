@@ -63,29 +63,9 @@ BlindMate is a comprehensive web application designed specifically for visually 
 - Modern web browser with camera and microphone access
 - Internet connection for AI services
 
-### Option 1: Replit Deployment (Recommended)
 
-1. **Get the required API key**:
-   - Visit [Google AI Studio](https://aistudio.google.com)
-   - Sign in with your Google account
-   - Create a new API key (free)
-   - Keep this key safe - you'll need it in step 3
 
-2. **Set up the project in Replit**:
-   - The project is already configured and ready to run
-   - All dependencies are pre-installed
-
-3. **Add your API key**:
-   - Go to the Secrets tab in your Replit project
-   - Add a new secret with key: `GEMINI_API_KEY`
-   - Paste your API key as the value
-
-4. **Run the application**:
-   ```bash
-   python main.py
-   ```
-
-### Option 2: Local Development
+### Local Development
 
 1. **Quick Setup (Automated)**:
    ```bash
