@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: blindmate
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements-local.txt"
+    startCommand: "gunicorn --bind 0.0.0.0:$PORT main:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: blindmate-db
+          property: connectionString
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+databases:
+  - name: blindmate-db
+    plan: free

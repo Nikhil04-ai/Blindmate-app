@@ -7,8 +7,10 @@ from flask_cors import CORS
 from gemini_service import GeminiService
 
 # Configure logging with UTF-8 encoding
+# Use INFO level for production, DEBUG for development
+log_level = logging.DEBUG if os.environ.get('FLASK_ENV') == 'development' else logging.INFO
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=log_level,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
